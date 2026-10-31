@@ -58,9 +58,17 @@
     <ol class="stages"></ol>
     <div class="bar"><i></i></div>
     <div class="activity"></div>
+    <div class="render" hidden><div class="render-line"></div><div class="bar"><i></i></div></div>
     <div class="links"></div>
   </section>
-  <section class="chat panel">
+  <nav class="tabs" role="tablist">
+    <button data-tab="chat" class="on">الشات</button>
+    <button data-tab="plan">الخطة</button>
+    <button data-tab="preview">البريفيو</button>
+    <button data-tab="editor">المحرر</button>
+    <button data-tab="output">المخرج النهائي</button>
+  </nav>
+  <section class="tab chat panel" data-pane="chat">
     <div class="log"></div>
     <div class="approvals"></div>
     <form class="composer">
@@ -68,6 +76,10 @@
       <div class="actions"><button class="primary" type="submit">ابعت</button><button class="danger stop" type="button" hidden>وقّف</button></div>
     </form>
   </section>
+  <section class="tab panel" data-pane="plan" hidden></section>
+  <section class="tab panel" data-pane="preview" hidden></section>
+  <section class="tab panel" data-pane="editor" hidden></section>
+  <section class="tab panel" data-pane="output" hidden></section>
 </template>
 <script src="/app.js"></script>
 </body>

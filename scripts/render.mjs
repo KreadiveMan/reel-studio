@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { parseArgs, ROOT, run, writeJson, readCachedJson } from './lib/media.mjs';
 import { withOutputTransaction } from './lib/delivery.mjs';
+import { createRenderProgress } from './lib/render-progress.mjs';
 import { assertProjectOutput } from './lib/project-paths.mjs';
 import { getServeUrl, requireFromEngine, ENGINE } from './lib/bundle.mjs';
 import { SPEC, levelFor, gopFrames, VUI_BSF, igCheck } from './lib/ig.mjs';
@@ -59,6 +60,7 @@ const VALID_CHANNELS = ['organic', 'ads', 'api'];
 if (!VALID_CHANNELS.includes(channel)) { console.error(`--channel must be one of ${VALID_CHANNELS.join('|')}`); process.exit(1); }
 const finalOut = assertProjectOutput(args.out ?? path.join(ENGINE, 'out', `${comp}${mode === 'preview' ? '-preview' : ''}.mp4`));
 if (!['.mp4', '.mov'].includes(path.extname(finalOut).toLowerCase())) throw new Error('Render output must be .mp4 or .mov');
+let progress = null;
 const published = await withOutputTransaction(finalOut, async (out) => {
 const outParts = path.parse(out);
 const raw = path.join(outParts.dir, `${outParts.name}.raw${outParts.ext || '.mp4'}`);
@@ -227,6 +229,9 @@ const igOverride = ({ args: ffArgs }) => {
 log(`mode ${mode}: crf ${crf}, x264 ${PRESET.x264Preset}, jpeg ${jpegQuality}, scale ${PRESET.scale}, concurrency ${concurrency}, gop ${gop}, level ${level}`);
 let lastPct = -5;
 const renderStart = Date.now();
+progress = createRenderProgress({ out: finalOut, mode, frames: composition.durationInFrames });
+// Remotion's onProgress names its own argument `progress`; this reaches the live progress file from inside it.
+const liveProgress = () => progress;
 const renderOptions={
   composition,
   serveUrl,
@@ -262,6 +267,7 @@ const renderOptions={
       lastPct = pct;
       const elapsed = (Date.now() - renderStart) / 1000;
       const fpsNow = renderedFrames / Math.max(0.001, elapsed);
+      liveProgress().frames({ percent: pct, fps: +fpsNow.toFixed(2) });
       log(`${pct}%  rendered ${renderedFrames}  encoded ${encodedFrames}  ${fpsNow.toFixed(2)} fps`);
     }
   },
@@ -274,11 +280,12 @@ if(useChunks){
   const settings={args:identityArgs,comp,mode,bundleHash:hash,inputRevision:guard.revision,composition:{width:composition.width,height:composition.height,fps:composition.fps,frames:composition.durationInFrames},preset:PRESET,crf,jpegQuality,concurrency,chunkSize,spec:SPEC.video};
   const key=await renderIdentity({...identityInputs,settings});await guard.check();
   const expected={width:Math.round(composition.width*PRESET.scale),height:Math.round(composition.height*PRESET.scale),fps:composition.fps,codec:'h264',profile:chunkProfile(PRESET.x264Preset),pixelFormat:'yuv420p',allowBlackRanges};
-  chunks=await renderChunks({key,frames:composition.durationInFrames,chunkFrames:chunkSize,jobs:chunkJobs,log,assertInputs:guard.check,
+  chunks=await renderChunks({key,frames:composition.durationInFrames,chunkFrames:chunkSize,jobs:chunkJobs,log:(m)=>{log(m);progress.log(m);},assertInputs:guard.check,
     render:({range,out:part})=>renderMedia({...renderOptions,outputLocation:part,frameRange:range,muted:true,enforceAudioTrack:false,onProgress:undefined}),
     validate:(file,range)=>validateChunk(file,range,expected)});
   const audioFile=args.muted?null:path.join(outParts.dir,'full-duration-audio.wav');
   // The audio pass mounts every frame, look included, so it keeps the picture render's tab count instead of the default (half the cores).
+  progress.phase('audio',91);
   if(audioFile)await renderMedia({composition,serveUrl,inputProps,codec:'wav',outputLocation:audioFile,overwrite:true,sampleRate:48000,enforceAudioTrack:true,logLevel:'warn',concurrency,chromiumOptions:renderChromiumOptions()});
   await guard.check();
   await assembleChunks({parts:chunks.parts,audio:audioFile,out:raw,fps:composition.fps,frames:composition.durationInFrames});
@@ -286,6 +293,7 @@ if(useChunks){
   chunks={key,reused:chunks.reused,rendered:chunks.rendered,total:chunks.parts.length,chunkFrames:chunkSize,jobs:chunkJobs,policy:CHUNK_POLICY};
 }else await renderMedia(renderOptions);
 const renderSec = +((Date.now() - renderStart) / 1000).toFixed(1);
+progress.phase('finalize', 93);
 const rawStat = await fs.stat(raw).catch(() => null);
 if (!rawStat || rawStat.size === 0) throw new Error(`Render reported success but ${raw} is missing or empty.`);
 
@@ -400,6 +408,7 @@ const report = { ok: true, comp, mode, out: finalOut, bytes: stat.size, outputSh
 await writeJson(`${out}.qc.json`, report);
 return report;
 }, { sidecars: ['.qc.json', ...(mode === 'deliver' ? ['.checks'] : [])] });
+progress?.done();
 console.log(JSON.stringify(published, null, 2));
 if (mode === 'deliver') await fs.rm(assertProjectOutput(`${finalOut}.head-check`), { recursive: true, force: true });
 if (published.head?.status === 'NEEDS-REVIEW') process.stderr.write(`\n${headBanner(published.head, published.head.directory)}\n`);

@@ -138,3 +138,44 @@ test('a denied command reaches Claude as a denial, and the page records it', asy
   assert.ok(project.items.some((i) => i.role === 'decision' && i.text.includes('رفضت')));
   assert.equal(project.links.editor, undefined);
 }));
+
+test('project details read the plan, scenes, cuts, renders, outputs and post copy from the studio files', async () => {
+  const {projectDetails, mediaFile} = await import('../scripts/lib/dashboard/details.mjs');
+  const root = mkdtempSync(path.join(ROOT, 'state', 'tmp', 'dashboard-details-'));
+  try {
+    const dir = path.join(root, 'Projects', 'demo');
+    mkdirSync(path.join(dir, 'renders'), {recursive: true}); mkdirSync(path.join(root, 'Outputs', 'demo'), {recursive: true});
+    writeFileSync(path.join(dir, 'EDITORIAL_PLAN.md'), '# Plan\n');
+    writeFileSync(path.join(dir, 'edit.json'), JSON.stringify({style: 'grid-glide', source: {fps: 30, totalFrames: 900}, segments: [{fromFrame: 30, toFrame: 300}, {fromFrame: 360, toFrame: 600}],
+      captions: {status: 'reviewed'}, scenes: [{id: 'a', family: 'intro', layout: 'split', fromFrame: 0, durationInFrames: 90, data: {title: 'أهلا'}}]}));
+    writeFileSync(path.join(dir, 'renders', 'edit-preview.mp4'), 'v');
+    writeFileSync(path.join(dir, 'renders', 'edit-preview.mp4.qc.json'), JSON.stringify({ok: true, mode: 'preview', timing: {totalSec: 12}, igCheck: {ok: true, fails: [], warnings: [], summary: {width: 1080, height: 1920, fps: 30, durationSec: 17, sizeMB: 2, loudness: {integratedLUFS: -14}}}, safe: {ok: true}, motion: {exempt: 'static-graphics'}}));
+    writeFileSync(path.join(root, 'Outputs', 'demo', 'demo.mp4'), '0123456789');
+    writeFileSync(path.join(root, 'Outputs', 'demo', 'demo.srt'), '1');
+    writeFileSync(path.join(dir, 'publish-copy.json'), JSON.stringify({title: 't', instagram: {caption: 'وصف', hashtags: ['#a', '#b']}}));
+    const d = await projectDetails(root, 'demo');
+    assert.equal(d.plan, '# Plan\n');
+    assert.deepEqual(d.scenes[0], {id: 'a', family: 'intro', layout: 'split', from: 0, to: 3, title: 'أهلا'});
+    assert.deepEqual(d.cuts.removed, [{from: 0, to: 1}, {from: 10, to: 12}, {from: 20, to: 30}]);
+    assert.equal(d.cuts.editSeconds, 17);
+    assert.deepEqual(d.renders[0].qc.checks.map((c) => [c.key, c.state]), [['igCheck', 'ok'], ['safe', 'ok'], ['motion', 'skip']]);
+    assert.equal(d.renders[0].qc.lufs, -14);
+    assert.deepEqual(d.outputs.map((f) => f.name).sort(), ['demo.mp4', 'demo.srt']);
+    assert.deepEqual(d.publish, [{platform: 'instagram', text: 'وصف\n\n#a #b', altText: null, pinnedComment: null}]);
+    assert.ok(await mediaFile(root, 'Outputs/demo/demo.mp4'));
+    assert.ok(await mediaFile(root, 'Projects/demo/renders/edit-preview.mp4'));
+    for (const bad of ['Projects/demo/edit.json', 'Projects/demo/../../etc/passwd', 'Outputs/demo/../../Raw/clip.mp4', 'Raw/x.mp4', 'Projects/demo/renders/edit-preview.mp4.qc.json']) assert.equal(await mediaFile(root, bad), null, bad);
+    assert.deepEqual(await projectDetails(root, '../x'), {slug: null});
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('media streams through the dashboard with seeking, and only with the session cookie', async () => withDashboard(async (app, root) => {
+  mkdirSync(path.join(root, 'Outputs', 'demo'), {recursive: true});
+  writeFileSync(path.join(root, 'Outputs', 'demo', 'demo.mp4'), '0123456789');
+  assert.equal((await call(app, {pathname: '/media/Outputs/demo/demo.mp4', cookie: false})).status, 401);
+  const part = await call(app, {pathname: '/media/Outputs/demo/demo.mp4', headers: {range: 'bytes=2-5'}});
+  assert.equal(part.status, 206); assert.equal(part.text, '2345'); assert.equal(part.headers['content-range'], 'bytes 2-5/10');
+  const whole = await call(app, {pathname: '/media/Outputs/demo/demo.mp4?download=1'});
+  assert.equal(whole.text, '0123456789'); assert.match(whole.headers['content-disposition'], /attachment/);
+  assert.equal((await call(app, {pathname: '/media/Outputs%2Fdemo%2F..%2F..%2FRaw%2Fdemo.mp4'})).status, 404);
+}));

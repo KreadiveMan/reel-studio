@@ -2,7 +2,7 @@
 // Reel Studio dashboard client: projects, uploads, the chat with Claude, approvals and stage progress.
 const $ = (sel, root = document) => root.querySelector(sel);
 const H = {'x-dashboard': '1', 'content-type': 'application/json'};
-const state = {stages: [], styles: [], projects: new Map(), raw: [], current: null, project: null, drafts: new Map()};
+const state = {stages: [], styles: [], projects: new Map(), raw: [], current: null, project: null, drafts: new Map(), tabs: new Map(), details: null};
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const size = (b) => b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(2) + ' GB' : b >= 1024 ** 2 ? (b / 1024 ** 2).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
 const clock = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0'); };
@@ -115,7 +115,7 @@ function upload(file, row) {
 
 // ---------- project view ----------
 async function openProject(id) {
-  state.current = id; renderSide();
+  state.current = id; state.details = null; renderSide();
   const main = $('#main');
   main.innerHTML = '<p class="empty">بحمّل المشروع…</p>';
   let data;
@@ -145,6 +145,152 @@ async function openProject(id) {
     button.disabled = false;
   });
   $('.stop').addEventListener('click', () => api(`/api/projects/${id}/interrupt`, {method: 'POST', body: '{}'}).catch((err) => alert(err.message)));
+  for (const button of document.querySelectorAll('.tabs button')) button.addEventListener('click', () => showTab(button.dataset.tab));
+  showTab(state.tabs.get(id) ?? 'chat');
+  loadDetails();
+}
+
+// ---------- tabs: plan, preview, editor, output ----------
+const LAYOUTS = {takeover: 'شاشة كاملة', split: 'مقسومة', presenter: 'المتكلم'};
+const PLATFORMS = {instagram: 'إنستجرام', tiktok: 'تيك توك', youtube: 'يوتيوب شورتس'};
+const sec = (n) => n === null || n === undefined ? '—' : `${n} ث`;
+const media = (p, download) => '/media/' + p.split('/').map(encodeURIComponent).join('/') + (download ? '?download=1' : '');
+
+function showTab(tab) {
+  if (!state.current) return;
+  state.tabs.set(state.current, tab);
+  for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.tab === tab);
+  for (const pane of document.querySelectorAll('[data-pane]')) pane.hidden = pane.dataset.pane !== tab;
+  if (tab !== 'chat') renderTab(tab);
+  if (tab === 'chat') scrollLog(true);
+}
+
+let detailsTimer = null;
+async function loadDetails() {
+  const id = state.current; if (!id) return;
+  clearTimeout(detailsTimer);
+  try {
+    const data = await api(`/api/projects/${id}/details`);
+    if (state.current !== id) return;
+    state.details = data.details;
+    if (state.project) { state.project.links = data.links; renderLinks(); }
+    const tab = state.tabs.get(id) ?? 'chat';
+    if (tab !== 'chat') renderTab(tab, {keepPlayers: true});
+    markTabs();
+  } catch {}
+}
+function markTabs() {
+  const d = state.details ?? {};
+  const counts = {plan: d.plan || d.scenes?.length ? '✓' : '', preview: d.renders?.length || '', output: d.outputs?.length ? '✓' : '', editor: state.project?.links?.editor ? '●' : ''};
+  for (const b of document.querySelectorAll('.tabs button')) {
+    const n = counts[b.dataset.tab];
+    b.querySelector('.n')?.remove();
+    if (n) b.insertAdjacentHTML('beforeend', `<span class="n">${esc(n)}</span>`);
+  }
+}
+
+function renderTab(tab, {keepPlayers = false} = {}) {
+  const pane = document.querySelector(`[data-pane="${tab}"]`); if (!pane) return;
+  // Do not rebuild a pane while a video in it is playing.
+  if (keepPlayers && [...pane.querySelectorAll('video')].some((v) => !v.paused)) return;
+  const d = state.details;
+  if (!d) { pane.innerHTML = '<p class="empty">بحمّل…</p>'; return; }
+  if (tab === 'plan') pane.innerHTML = planHtml(d);
+  if (tab === 'preview') pane.innerHTML = previewHtml(d);
+  if (tab === 'editor') pane.innerHTML = editorHtml();
+  if (tab === 'output') pane.innerHTML = outputHtml(d);
+  wireTab(pane);
+}
+
+function noProject(text) { return `<p class="empty">${esc(text)}</p>`; }
+
+function planHtml(d) {
+  if (!d.slug) return noProject('Claude لسه ما بدأش المشروع. الخطة هتظهر هنا أول ما يكتبها.');
+  let html = '';
+  const facts = [d.style && `الستايل: ${state.styles.find((x) => x.id === d.style)?.label ?? d.style}`, d.durationSec && `المدة: ${d.durationSec} ث`, d.contentMode === 'graphics' ? 'موشن من غير تسجيل' : null, d.captionsStatus && `الكابشن: ${d.captionsStatus === 'reviewed' ? 'متراجع' : 'مسودة'}`].filter(Boolean);
+  if (facts.length) html += `<div class="facts">${facts.map((f) => `<span class="fact" dir="auto">${esc(f)}</span>`).join('')}</div>`;
+  if (d.scenes?.length) html += `<div class="sec"><h3>المشاهد بالترتيب</h3><div class="tablewrap"><table><thead><tr><th>#</th><th>المشهد</th><th>النوع</th><th>الشكل</th><th>من</th><th>لحد</th></tr></thead><tbody>${d.scenes.map((s, i) => `<tr><td>${i + 1}</td><td>${esc(s.title ?? s.id)}</td><td><code>${esc(s.family)}</code></td><td>${esc(LAYOUTS[s.layout] ?? s.layout)}</td><td>${sec(s.from)}</td><td>${sec(s.to)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  if (d.cuts) html += `<div class="sec"><h3>القطعات</h3><p class="dim">التسجيل ${sec(d.cuts.sourceSeconds)} ← بعد القص ${sec(d.cuts.editSeconds)}</p><div class="tablewrap"><table><thead><tr><th>اللي هيتشال من التسجيل</th></tr></thead><tbody>${d.cuts.removed.length ? d.cuts.removed.map((c) => `<tr><td>من ${sec(c.from)} لحد ${sec(c.to)}</td></tr>`).join('') : '<tr><td>مفيش قص</td></tr>'}</tbody></table></div></div>`;
+  // The studio writes its editorial plan in English; the scene table above is the creator's view, the full plan stays one click away.
+  if (d.plan) html += d.scenes?.length ? `<details class="full"><summary>الخطة التفصيلية زي ما Claude كتبها</summary><div class="md">${markdown(d.plan)}</div></details>` : `<div class="sec md">${markdown(d.plan)}</div>`;
+  if (!html) return noProject('الخطة لسه ما اتكتبتش.');
+  html += `<div class="cta-row"><button class="primary" data-say="موافق على الخطة، كمّل.">موافق، كمّل</button><textarea class="plan-edit" rows="2" placeholder="عايز تعدّل إيه في الخطة؟"></textarea><button class="ghost" data-say-from=".plan-edit" data-prefix="عدّل الخطة: ">ابعت التعديل</button></div>`;
+  return html;
+}
+
+function qcHtml(qc) {
+  if (!qc) return '';
+  const facts = [qc.width && `${qc.width}×${qc.height}`, qc.fps && `${qc.fps} fps`, qc.durationSec && `${Math.round(qc.durationSec * 10) / 10} s`, qc.sizeMB && `${qc.sizeMB} MB`, qc.lufs !== null && qc.lufs !== undefined && `${qc.lufs} LUFS`, qc.renderSeconds && `render ${qc.renderSeconds} s`].filter(Boolean);
+  return `<div class="facts">${facts.map((f) => `<span class="fact">${esc(f)}</span>`).join('')}</div>` + (qc.checks?.length ? `<ul class="checks">${qc.checks.map((c) => `<li class="${c.state}">${esc(c.label)}${c.note ? ` <span class="dim">(${esc(c.note)})</span>` : ''}</li>`).join('')}</ul>` : '');
+}
+
+function previewHtml(d) {
+  if (!d.renders?.length) return noProject(state.project?.render ? 'البريفيو بيترندر دلوقتي… هيظهر هنا أول ما يخلص.' : 'لسه مفيش بريفيو. لما Claude يرندر نسخة معاينة هتظهر هنا.');
+  let html = d.renders.map((r) => `<div class="vid"><video controls preload="metadata" playsinline src="${media(r.path)}"></video><div><h3>${r.name.includes('delivery') ? 'نسخة التسليم' : 'نسخة معاينة'}</h3><p class="dim">${new Date(r.modified).toLocaleString('ar-EG')}</p>${qcHtml(r.qc)}<div class="downloads"><a href="${media(r.path, true)}">تحميل ⬇</a></div></div></div>`).join('');
+  if (d.stills?.length) html += `<div class="sec"><h3>لقطات المراجعة</h3><div class="stills">${d.stills.map((s) => `<a href="${media(s.path)}" target="_blank"><img loading="lazy" src="${media(s.path)}" alt=""></a>`).join('')}</div></div>`;
+  html += `<div class="cta-row"><textarea class="prev-edit" rows="2" placeholder="ملاحظاتك على البريفيو…"></textarea><button class="primary" data-say-from=".prev-edit" data-prefix="ملاحظاتي على البريفيو: ">ابعت لـ Claude</button><button class="ghost" data-say="البريفيو تمام، جهّز النسخة النهائية للتسليم.">تمام، جهّز النهائي</button></div>`;
+  return html;
+}
+
+function editorHtml() {
+  const url = state.project?.links?.editor;
+  if (!url) return `<p class="empty">المحرر مش شغال دلوقتي.</p><div class="cta-row" style="justify-content:center"><button class="primary" data-say="افتح المحرر الحي على بورت 4380.">اطلب من Claude يفتح المحرر</button></div>`;
+  return `<div class="cta-row" style="margin:0 0 10px"><a class="primary" style="text-decoration:none" href="${esc(url)}" target="_blank" rel="noopener">افتح المحرر في صفحة لوحده ↗</a><span class="dim">لو المحرر ما ظهرش تحت، اتأكد إن البورت 4380 موجود في أمر SSH.</span></div><iframe class="editor" src="${esc(url)}" title="المحرر"></iframe>`;
+}
+
+function outputHtml(d) {
+  if (!d.outputs?.length && !d.publish?.length) return noProject(state.project?.render?.mode === 'deliver' ? 'النسخة النهائية بتترندر دلوقتي…' : 'لسه مفيش مخرج نهائي. لما Claude يسلّم الفيديو هيظهر هنا.');
+  const video = d.outputs.find((f) => /\.(mp4|mov)$/i.test(f.name));
+  const cover = d.outputs.find((f) => /\.(jpe?g|png)$/i.test(f.name));
+  let html = '';
+  if (video) html += `<div class="vid"><video controls preload="metadata" playsinline ${cover ? `poster="${media(cover.path)}"` : ''} src="${media(video.path)}"></video><div><h3>الفيديو النهائي</h3><p class="dim"><span class="name">${esc(video.path)}</span></p>${qcHtml(video.qc)}</div></div>`;
+  if (d.outputs.length) html += `<div class="downloads">${d.outputs.map((f) => `<a href="${media(f.path, true)}">${/\.srt$/i.test(f.name) ? 'الكابشن SRT' : /\.(jpe?g|png)$/i.test(f.name) ? 'صورة الغلاف' : 'الفيديو'} ⬇ <span class="dim">${size(f.bytes)}</span></a>`).join('')}</div>`;
+  if (d.publish?.length) html += `<div class="sec"><h3>وصف البوست</h3>${d.publish.map((p, i) => `<div class="copybox"><div class="hd"><b>${esc(PLATFORMS[p.platform] ?? p.platform)}</b><button class="ghost" data-copy="${i}">انسخ</button></div><pre dir="auto">${esc(p.text)}</pre>${p.pinnedComment ? `<p class="dim">تعليق مثبّت: ${esc(p.pinnedComment)}</p>` : ''}${p.altText ? `<p class="dim">النص البديل: ${esc(p.altText)}</p>` : ''}</div>`).join('')}</div>`;
+  else if (video) html += `<div class="cta-row"><button class="ghost" data-say="اكتبلي وصف البوست للفيديو النهائي.">اطلب وصف البوست</button></div>`;
+  if (d.qcReport) html += `<div class="sec md"><h3>تقرير الجودة</h3>${markdown(d.qcReport)}</div>`;
+  return html;
+}
+
+function wireTab(pane) {
+  const say = async (text, button) => {
+    if (!text.trim()) return;
+    button.disabled = true;
+    try { await api(`/api/projects/${state.current}/messages`, {method: 'POST', body: JSON.stringify({text})}); showTab('chat'); }
+    catch (err) { alert(err.message); }
+    button.disabled = false;
+  };
+  for (const b of pane.querySelectorAll('[data-say]')) b.addEventListener('click', () => say(b.dataset.say, b));
+  for (const b of pane.querySelectorAll('[data-say-from]')) b.addEventListener('click', () => { const box = pane.querySelector(b.dataset.sayFrom); if (box.value.trim()) say(b.dataset.prefix + box.value.trim(), b); });
+  for (const b of pane.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
+    const text = state.details.publish[Number(b.dataset.copy)].text;
+    try { await navigator.clipboard.writeText(text); } catch { const t = document.createElement('textarea'); t.value = text; document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); }
+    b.textContent = 'اتنسخ ✓'; setTimeout(() => { b.textContent = 'انسخ'; }, 1500);
+  });
+}
+
+// Small Markdown reader for the plan and reports: headings, tables, lists, paragraphs; everything escaped first.
+function markdown(source) {
+  const lines = String(source).replace(/\r\n/g, '\n').split('\n');
+  const inline = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  const out = []; let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*\|/.test(line) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] ?? '')) {
+      const cells = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()));
+      const head = cells(line); i += 2; const rows = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(cells(lines[i++]));
+      out.push(`<div class="tablewrap"><table><thead><tr>${head.map((c) => `<th dir="auto">${c}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td dir="auto">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+      continue;
+    }
+    const h = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (h) { out.push(`<h${Math.min(4, h[1].length + 1)} dir="auto">${inline(h[2])}</h${Math.min(4, h[1].length + 1)}>`); i++; continue; }
+    if (/^\s*[-*]\s+/.test(line)) { const items = []; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) items.push(`<li dir="auto">${inline(lines[i++].replace(/^\s*[-*]\s+/, ''))}</li>`); out.push(`<ul>${items.join('')}</ul>`); continue; }
+    if (/^\s*\d+[.)]\s+/.test(line)) { const items = []; while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) items.push(`<li dir="auto">${inline(lines[i++].replace(/^\s*\d+[.)]\s+/, ''))}</li>`); out.push(`<ol>${items.join('')}</ol>`); continue; }
+    if (!line.trim()) { i++; continue; }
+    const para = []; while (i < lines.length && lines[i].trim() && !/^(#|\s*\||\s*[-*]\s|\s*\d+[.)]\s)/.test(lines[i])) para.push(inline(lines[i++]));
+    out.push(`<p dir="auto">${para.join('<br>')}</p>`);
+  }
+  return out.join('');
 }
 
 function itemNode(item) {
@@ -202,6 +348,14 @@ function renderHead() {
   else if (p.running) activity.innerHTML = `<span class="spin"></span>${esc(p.activity?.text || 'Claude بيفكّر…')} <span class="dim">· ${clock(Date.now() - Date.parse(p.activity?.since ?? p.updatedAt))}</span>`;
   else activity.innerHTML = p.current === null ? '<span style="color:var(--ok)">✓ الفيديو النهائي جاهز في Outputs.</span>' : '<span class="dim">Claude مستني رسالتك.</span>';
   $('.stop').hidden = !p.running;
+  const r = summary.render, box = $('.render');
+  box.hidden = !r;
+  if (r) {
+    const what = r.mode === 'deliver' ? 'النسخة النهائية' : r.mode === 'review' ? 'نسخة المراجعة' : 'البريفيو';
+    const phase = {frames: r.chunks ? `جزء ${r.chunks.done} من ${r.chunks.total}` : 'الفريمات', audio: 'الصوت', finalize: 'التجهيز الأخير'}[r.phase] ?? '';
+    $('.render-line').innerHTML = `🎬 بيرندر ${what}: <b>${r.percent}%</b> <span class="dim">· ${esc(phase)}${r.fps ? ` · ${r.fps} fps` : ''} · فات ${clock(Date.now() - Date.parse(r.startedAt))}${r.remainingMs !== null ? ` · باقي حوالي ${clock(r.remainingMs)}` : ''}</span>`;
+    $('.render .bar i').style.width = r.percent + '%';
+  }
 }
 function renderLinks() {
   const p = state.project; if (!p || !$('.links')) return;
@@ -282,7 +436,8 @@ function connect() {
     if (e.type === 'item') upsertItem(e.item);
     else if (e.type === 'delta') delta(e.itemId, e.text);
     else if (e.type === 'activity') { state.project.activity = e.activity; renderHead(); }
-    else if (e.type === 'links') { state.project.links = e.links; renderLinks(); }
+    else if (e.type === 'links') { state.project.links = e.links; renderLinks(); markTabs(); if ((state.tabs.get(state.current) ?? 'chat') === 'editor') renderTab('editor'); }
+    else if (e.type === 'details') loadDetails();
     else if (e.type === 'permission') addApproval(e.entry);
     else if (e.type === 'permission-done') $(`.approval[data-req="${CSS.escape(e.requestId)}"]`)?.remove();
   };

@@ -8,6 +8,8 @@ import {HttpError, listRawFiles, receiveUpload, sameToken} from '../upload-serve
 import {ClaudeSession} from './claude-session.mjs';
 import {DashboardStore} from './store.mjs';
 import {STAGES, detectStages, recordStages, slugFromText, stageSummary} from './progress.mjs';
+import {mediaFile, projectDetails, sendMedia} from './details.mjs';
+import {RENDER_PROGRESS_DIR} from '../render-progress.mjs';
 
 // The studio dashboard: projects, uploads into Raw/, a chat with Claude Code running in the studio folder,
 // approve/deny buttons for anything outside the allowlist, and stage progress read from the project files.
@@ -19,6 +21,22 @@ const COOKIE = 'rs_dashboard';
 const LOOPBACK = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/;
 const LINK = /http:\/\/(?:127\.0\.0\.1|localhost):(\d{2,5})\/[^\s"'<>)\]`]*/g;
 const LINK_KINDS = {4380: 'editor', 4381: 'settings'};
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+
+/** Renders that are running now, keyed by studio project slug, with an estimate of the time left. */
+async function activeRenders(root, dir = RENDER_PROGRESS_DIR) {
+  const bySlug = new Map();
+  for (const name of await fs.readdir(dir).catch(() => [])) {
+    if (!name.endsWith('.json')) continue;
+    const entry = await fs.readFile(path.join(dir, name), 'utf8').then(JSON.parse).catch(() => null);
+    const slug = /^(?:Projects|Outputs)\/([a-z0-9][a-z0-9-]{0,63})\//.exec(entry?.out ?? '')?.[1];
+    if (!slug || entry.status !== 'running' || !alive(entry.pid)) continue;
+    const elapsed = Date.now() - Date.parse(entry.startedAt);
+    const remainingMs = entry.percent >= 3 ? Math.round(elapsed * (100 - entry.percent) / entry.percent) : null;
+    bySlug.set(slug, {out: entry.out, mode: entry.mode, percent: entry.percent, phase: entry.phase, fps: entry.fps, chunks: entry.chunks, startedAt: entry.startedAt, remainingMs});
+  }
+  return bySlug;
+}
 
 const cookieToken = (header = '') => header.split(';').map((p) => p.trim().split('=')).find(([k]) => k === COOKIE)?.[1];
 
@@ -51,6 +69,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
   const store = await new DashboardStore(root).open();
   const token = await store.token();
   const sessions = new Map();
+  let renders = new Map();
   const pending = new Map(); // projectId -> Map(requestId -> entry)
   const clients = new Set();
   const styles = Object.entries(STYLE_LABELS).map(([id, v]) => ({id, label: v.label, description: v.description}));
@@ -59,7 +78,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
 
   const broadcast = (event) => { const line = `data: ${JSON.stringify(event)}\n\n`; for (const res of clients) res.write(line); };
   const summary = (p) => ({id: p.id, kind: p.kind, title: p.title, rawFile: p.rawFile, slug: p.slug, updatedAt: p.updatedAt, createdAt: p.createdAt,
-    running: !!sessions.get(p.id)?.running, waiting: (pending.get(p.id)?.size ?? 0) > 0, stages: p.stages, activity: p.activity, ...stageSummary(p)});
+    running: !!sessions.get(p.id)?.running, waiting: (pending.get(p.id)?.size ?? 0) > 0, stages: p.stages, activity: p.activity, render: renders.get(p.slug) ?? null, ...stageSummary(p)});
   const full = (p) => ({...p, ...summary(p), pending: [...(pending.get(p.id)?.values() ?? [])]});
   const changed = (p) => broadcast({type: 'project', project: summary(p)});
 
@@ -112,16 +131,28 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
   }
 
   async function refreshStages() {
+    const before = renders;
+    renders = await activeRenders(root);
+    for (const project of store.list()) {
+      const was = before.get(project.slug), now = renders.get(project.slug);
+      if (JSON.stringify(was ?? null) !== JSON.stringify(now ?? null)) changed(project);
+      if (was && !now) broadcast({type: 'details', id: project.id});
+    }
     const day = Date.now() - 24 * 3600 * 1000;
     for (const project of store.list()) {
       if (!sessions.get(project.id)?.running && Date.parse(project.updatedAt) < day && project.stages?.done) continue;
-      if (recordStages(project, await detectStages(root, project))) { store.save(project); changed(project); }
+      if (recordStages(project, await detectStages(root, project))) { store.save(project); changed(project); broadcast({type: 'details', id: project.id}); }
     }
   }
   const poll = setInterval(() => refreshStages().catch(() => {}), 3000);
 
   async function route(req, res, url) {
     const [, api, a, b, c, d] = url.pathname.split('/');
+    if (api === 'media' && req.method === 'GET') {
+      const media = await mediaFile(root, decodeURIComponent(url.pathname.slice('/media/'.length)));
+      if (!media) throw new HttpError(404, 'الملف مش موجود.');
+      return sendMedia(req, res, media, {download: url.searchParams.get('download') === '1'});
+    }
     if (api !== 'api') {
       const file = STATIC[url.pathname];
       if (!file || req.method !== 'GET') throw new HttpError(404, 'الصفحة مش موجودة.');
@@ -157,6 +188,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
     const project = a === 'projects' && b ? store.get(b) : null;
     if (a === 'projects' && !project) throw new HttpError(404, 'المشروع مش موجود.');
     if (project && !c && req.method === 'GET') return send(res, 200, {ok: true, project: {...full(project), links: await liveLinks(project.links)}});
+    if (project && c === 'details' && req.method === 'GET') return send(res, 200, {ok: true, details: await projectDetails(root, project.slug), links: await liveLinks(project.links)});
     if (project && c === 'messages' && req.method === 'POST') {
       const text = String((await bodyJson(req)).text ?? '').trim().slice(0, 8000);
       if (!text) throw new HttpError(400, 'اكتب رسالة.');

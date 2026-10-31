@@ -18,7 +18,8 @@ export const DASHBOARD_PROMPT = `You are running inside the Reel Studio dashboar
 - Start long-running screens with fixed ports so the creator's SSH tunnel reaches them: live editor --port 4380, settings --port 4381. Run them in the background and put the printed http://127.0.0.1:... link in your reply on its own line; the dashboard turns it into a button.
 - Ask creative or consequential decisions with the AskUserQuestion tool; the dashboard shows the options as buttons.
 - Commands outside the studio allowlist appear to the creator as approve/deny buttons, so keep them rare: read files with Read and search with Grep/Glob instead of cat, sed, grep or ls in Bash; run studio commands plainly (node scripts/<name>.mjs …) without pipes, redirections, && chains or 2>&1 so they match the allowlist. If a command is denied, say what is blocked and continue with what you can.
-- Write every tool description in short Egyptian Arabic; the creator sees it as the progress line and on approval cards.`;
+- Write every tool description in short Egyptian Arabic; the creator sees it as the progress line and on approval cards.
+- When a plan is ready, summarise it in the chat in numbered Egyptian Arabic (the scenes, what is cut, the style) before asking for approval; the dashboard's plan tab shows the scene table beside it.`;
 
 export function claudeArgs({sessionId, resume}) {
   return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
