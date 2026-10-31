@@ -83,6 +83,7 @@ Next:
 
 The settings screen and live editor listen on 127.0.0.1 only. To open them from your own computer, connect with
   ssh -L 4380:127.0.0.1:4380 -L 4381:127.0.0.1:4381 -L 4382:127.0.0.1:4382 <user>@<server>
-then ask the assistant for the settings («افتح إعداداتي»), the upload page («افتح صفحة الرفع») or the editor,
-and open the link it prints. Editor 4380, settings 4381, uploads 4382.
+then start the dashboard on the server and open the link it prints (uploads, projects and the chat with Claude):
+  cd "$DIR" && nohup "$NODE" scripts/dashboard.mjs > state/dashboard.log 2>&1 & sleep 2; sed -n 2p state/dashboard.log
+Dashboard 4382, editor 4380, settings 4381.
 EOF

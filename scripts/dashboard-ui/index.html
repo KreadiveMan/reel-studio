@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة Reel Studio</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="top">
+  <button id="menu" class="icon" aria-label="المشاريع">☰</button>
+  <h1>لوحة Reel Studio</h1>
+  <span id="conn" class="conn">بيتصل…</span>
+</header>
+<div class="layout">
+  <aside id="side">
+    <button id="new" class="primary wide">+ مشروع جديد</button>
+    <button id="files" class="ghost wide">الملفات المرفوعة</button>
+    <h2>المشاريع</h2>
+    <nav id="projects"><p class="dim">لسه مفيش مشاريع.</p></nav>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<template id="tpl-home">
+  <section class="panel">
+    <h2>ارفع الفيديوهات</h2>
+    <p class="dim">الملفات بتتحط في فولدر <b>Raw</b> على السيرفر. ولو فيه ملف بنفس الاسم، القديم بيفضل زي ما هو والجديد بياخد رقم في آخر اسمه.</p>
+    <div class="drop" tabindex="0"><strong>اسحب الفيديوهات هنا</strong><span class="dim">أو اضغط واختار من جهازك</span>
+      <input type="file" multiple hidden accept="video/*,audio/*,image/*"></div>
+    <div class="queue"></div>
+  </section>
+  <section class="panel">
+    <h2>مشروع جديد</h2>
+    <form class="new-form">
+      <div class="seg">
+        <label><input type="radio" name="kind" value="recording" checked> فيديو متسجّل</label>
+        <label><input type="radio" name="kind" value="graphics"> موشن من فكرة (من غير تسجيل)</label>
+      </div>
+      <label class="field rec">الفيديو<select name="rawFile"></select></label>
+      <label class="field">الستايل<select name="style"><option value="">تلقائي — Claude يختار</option></select></label>
+      <label class="field">اسم المشروع (اختياري)<input name="title" maxlength="80" placeholder="مثلًا: ريل عن العرض الجديد"></label>
+      <label class="field"><span class="notes-label">ملاحظاتك (اختياري)</span><textarea name="notes" rows="3" maxlength="4000" placeholder="أي حاجة عايزها: الطول، الجمهور، حاجة تتشال…"></textarea></label>
+      <p class="form-error"></p>
+      <button class="primary" type="submit">ابدأ المونتاج</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>الموجود في Raw</h2>
+    <div class="rawlist"><p class="dim">بحمّل…</p></div>
+  </section>
+</template>
+
+<template id="tpl-project">
+  <section class="head panel">
+    <div class="title-row"><h2 class="ptitle"></h2><span class="badge"></span></div>
+    <div class="meta dim"></div>
+    <ol class="stages"></ol>
+    <div class="bar"><i></i></div>
+    <div class="activity"></div>
+    <div class="links"></div>
+  </section>
+  <section class="chat panel">
+    <div class="log"></div>
+    <div class="approvals"></div>
+    <form class="composer">
+      <textarea rows="2" placeholder="اكتب لـ Claude… (Enter للإرسال، Shift+Enter لسطر جديد)"></textarea>
+      <div class="actions"><button class="primary" type="submit">ابعت</button><button class="danger stop" type="button" hidden>وقّف</button></div>
+    </form>
+  </section>
+</template>
+<script src="/app.js"></script>
+</body>
+</html>
