@@ -18,6 +18,11 @@
     <button id="files" class="ghost wide">الملفات المرفوعة</button>
     <h2>المشاريع</h2>
     <nav id="projects"><p class="dim">لسه مفيش مشاريع.</p></nav>
+    <div class="side-foot">
+      <button id="settings" class="ghost wide">إعداداتي (الاسم، الألوان، الستايل)</button>
+      <div id="disk" class="dim"></div>
+      <button id="logout" class="ghost wide" hidden>خروج</button>
+    </div>
   </aside>
   <main id="main"></main>
 </div>
@@ -36,8 +41,10 @@
       <div class="seg">
         <label><input type="radio" name="kind" value="recording" checked> فيديو متسجّل</label>
         <label><input type="radio" name="kind" value="graphics"> موشن من فكرة (من غير تسجيل)</label>
+        <label><input type="radio" name="kind" value="podcast"> بودكاست (حلقة طويلة ← كليبات)</label>
       </div>
-      <label class="field rec">الفيديو<select name="rawFile"></select></label>
+      <div class="field rec"><span class="rec-label">الفيديو</span><div class="picks"></div><span class="pick-note dim"></span></div>
+      <label class="field pod">عدد الكليبات (اختياري)<input name="clips" type="number" min="1" max="10" placeholder="Claude يقترح من 3 لـ 5"></label>
       <label class="field">الستايل<select name="style"><option value="">تلقائي — Claude يختار</option></select></label>
       <label class="field">اسم المشروع (اختياري)<input name="title" maxlength="80" placeholder="مثلًا: ريل عن العرض الجديد"></label>
       <label class="field"><span class="notes-label">ملاحظاتك (اختياري)</span><textarea name="notes" rows="3" maxlength="4000" placeholder="أي حاجة عايزها: الطول، الجمهور، حاجة تتشال…"></textarea></label>
@@ -55,12 +62,23 @@
   <section class="head panel">
     <div class="title-row"><h2 class="ptitle"></h2><span class="badge"></span></div>
     <div class="meta dim"></div>
+    <div class="queued-box" hidden>⏳ المشروع ده في الطابور: هيبدأ لوحده لما Claude يخلص المشروع اللي شغال. <button class="primary start-now">ابدأ دلوقتي</button></div>
     <ol class="stages"></ol>
     <div class="bar"><i></i></div>
     <div class="activity"></div>
     <div class="render" hidden><div class="render-line"></div><div class="bar"><i></i></div></div>
     <div class="links"></div>
+    <div class="head-foot"><span class="psize dim"></span><button class="danger del">مسح المشروع</button></div>
   </section>
+  <dialog class="del-dialog">
+    <form method="dialog">
+      <h3>مسح المشروع</h3>
+      <p class="dim">المحادثة وتتبّع المشروع هيتمسحوا من اللوحة. الفيديو الخام في Raw مش هيتمسح.</p>
+      <label><input type="checkbox" name="studio"> امسح ملفات الشغل كمان (Projects) — البريفيو والمسودات</label>
+      <label><input type="checkbox" name="outputs"> امسح الفيديو النهائي كمان (Outputs)</label>
+      <div class="btns"><button value="ok" class="danger">امسح</button><button value="cancel" class="ghost">إلغاء</button></div>
+    </form>
+  </dialog>
   <nav class="tabs" role="tablist">
     <button data-tab="chat" class="on">الشات</button>
     <button data-tab="plan">الخطة</button>

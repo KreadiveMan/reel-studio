@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دخول — لوحة Reel Studio</title>
+<style>
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:#0e151d; color:#e6edf3; font-family:system-ui, "Segoe UI", Tahoma, sans-serif; }
+  form { background:#151f2a; border:1px solid #243241; border-radius:14px; padding:26px; width:min(92vw, 360px); }
+  h1 { font-size:20px; margin:0 0 14px; }
+  input { width:100%; box-sizing:border-box; font:inherit; background:#0f1821; border:1px solid #243241; border-radius:9px; padding:10px; color:#e6edf3; }
+  button { margin-top:12px; width:100%; font:inherit; background:#4d8dff; color:#fff; border:0; border-radius:10px; padding:10px; cursor:pointer; }
+  p { color:#ff6b6b; min-height:1.2em; margin:10px 0 0; }
+</style>
+</head>
+<body>
+<form>
+  <h1>لوحة Reel Studio</h1>
+  <input type="password" name="password" placeholder="الباسورد" autocomplete="current-password" autofocus required>
+  <button type="submit">ادخل</button>
+  <p></p>
+</form>
+<script>
+document.querySelector('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.querySelector('p'); msg.textContent = '';
+  const res = await fetch('/api/login', {method: 'POST', headers: {'content-type': 'application/json', 'x-dashboard': '1'}, body: JSON.stringify({password: e.target.password.value})});
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data.ok) location.reload(); else msg.textContent = data.error || 'حصلت مشكلة.';
+});
+</script>
+</body>
+</html>

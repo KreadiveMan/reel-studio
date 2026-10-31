@@ -25,6 +25,7 @@ function format(text) {
 
 // ---------- sidebar ----------
 function badge(p) {
+  if (p.queued) return ['queue', 'في الطابور'];
   if (p.waiting) return ['wait', 'مستني ردك'];
   if (p.running) return ['run', 'Claude شغال'];
   if (p.current === null) return ['done', 'جاهز'];
@@ -53,17 +54,23 @@ function renderHome() {
   const form = $('.new-form', main);
   $('select[name=style]', form).insertAdjacentHTML('beforeend', state.styles.map((s) => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join(''));
   const syncKind = () => {
-    const graphics = form.kind.value === 'graphics';
+    const kind = form.kind.value, graphics = kind === 'graphics';
     $('.rec', form).hidden = graphics;
+    $('.pod', form).hidden = kind !== 'podcast';
+    $('.rec-label', form).textContent = kind === 'podcast' ? 'الحلقة' : 'الفيديو (ممكن تختار أكتر من واحد)';
     $('.notes-label', form).textContent = graphics ? 'فكرة الموشن (مطلوبة)' : 'ملاحظاتك (اختياري)';
+    renderPicks();
   };
-  form.addEventListener('change', syncKind); syncKind();
+  form.addEventListener('change', (e) => { if (e.target.name === 'kind') syncKind(); else if (e.target.name === 'pick') pickNote(); });
+  syncKind();
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const button = $('button[type=submit]', form), error = $('.form-error', form);
     button.disabled = true; error.textContent = '';
     try {
-      const data = await api('/api/projects', {method: 'POST', body: JSON.stringify({kind: form.kind.value, rawFile: form.rawFile.value, style: form.style.value, title: form.title.value, notes: form.notes.value})});
+      const rawFiles = [...form.querySelectorAll('input[name=pick]:checked')].map((x) => x.value);
+      const data = await api('/api/projects', {method: 'POST', body: JSON.stringify({kind: form.kind.value, rawFiles, clips: form.clips.value || null, style: form.style.value, title: form.title.value, notes: form.notes.value})});
+      for (const p of data.projects ?? [data.project]) state.projects.set(p.id, p);
       state.projects.set(data.project.id, data.project);
       location.hash = 'p=' + data.project.id;
     } catch (err) { error.textContent = err.message; button.disabled = false; }
@@ -71,14 +78,30 @@ function renderHome() {
   renderRaw();
 }
 function renderRaw() {
-  const main = $('#main');
-  const list = $('.rawlist', main), select = $('select[name=rawFile]', main);
+  const list = $('.rawlist');
   if (!list) return;
-  list.innerHTML = state.raw.length ? state.raw.map((f) => `<div class="row"><div class="top2"><span class="name">Raw/${esc(f.name)}</span><span class="size">${size(f.bytes)}</span></div></div>`).join('') : '<p class="dim">لسه مفيش ملفات.</p>';
-  const keep = select.value;
+  list.innerHTML = state.raw.length ? state.raw.map((f) => `<div class="row"><div class="top2"><span class="name">Raw/${esc(f.name)}</span><span><span class="size">${size(f.bytes)}</span> <button class="rawdel" data-name="${esc(f.name)}" title="امسح الملف">مسح</button></span></div></div>`).join('') : '<p class="dim">لسه مفيش ملفات.</p>';
+  for (const b of list.querySelectorAll('.rawdel')) b.addEventListener('click', async () => {
+    if (!confirm(`تمسح Raw/${b.dataset.name} من السيرفر؟ الملف ده هيتمسح نهائي.`)) return;
+    try { await api('/api/raw?name=' + encodeURIComponent(b.dataset.name), {method: 'DELETE', body: '{}'}); } catch (err) { alert(err.message); }
+  });
+  renderPicks();
+}
+function renderPicks() {
+  const form = $('.new-form'); if (!form) return;
+  const box = $('.picks', form), podcast = form.kind.value === 'podcast';
+  const kept = new Set([...box.querySelectorAll('input:checked')].map((x) => x.value));
   const videos = state.raw.filter((f) => /\.(mp4|mov|m4v|mkv|webm|avi|mts|mp3|wav|m4a|aac|flac|ogg)$/i.test(f.name));
-  select.innerHTML = videos.length ? videos.map((f) => `<option value="Raw/${esc(f.name)}">${esc(f.name)}</option>`).join('') : '<option value="">ارفع فيديو الأول</option>';
-  if (keep) select.value = keep;
+  box.innerHTML = videos.length ? videos.map((f, i) => {
+    const value = `Raw/${f.name}`, checked = kept.size ? kept.has(value) : i === 0;
+    return `<label><input type="${podcast ? 'radio' : 'checkbox'}" name="pick" value="${esc(value)}" ${checked ? 'checked' : ''}> <span class="name">${esc(f.name)}</span> <span class="size">${size(f.bytes)}</span></label>`;
+  }).join('') : '<span class="dim">ارفع فيديو الأول من فوق.</span>';
+  pickNote();
+}
+function pickNote() {
+  const form = $('.new-form'); if (!form) return;
+  const n = form.querySelectorAll('input[name=pick]:checked').length;
+  $('.pick-note', form).textContent = n > 1 ? `هيتعمل ${n} مشاريع، مشروع لكل فيديو، وهيشتغلوا ورا بعض في الطابور.` : '';
 }
 
 let uploadChain = Promise.resolve();
@@ -145,6 +168,16 @@ async function openProject(id) {
     button.disabled = false;
   });
   $('.stop').addEventListener('click', () => api(`/api/projects/${id}/interrupt`, {method: 'POST', body: '{}'}).catch((err) => alert(err.message)));
+  $('.start-now').addEventListener('click', () => api(`/api/projects/${id}/start`, {method: 'POST', body: '{}'}).catch((err) => alert(err.message)));
+  $('.del').addEventListener('click', () => {
+    const dialog = $('.del-dialog'); dialog.querySelector('form').reset(); dialog.showModal();
+    dialog.onclose = async () => {
+      if (dialog.returnValue !== 'ok') return;
+      const f = dialog.querySelector('form');
+      try { await api(`/api/projects/${id}`, {method: 'DELETE', body: JSON.stringify({studio: f.studio.checked, outputs: f.outputs.checked})}); }
+      catch (err) { alert(err.message); }
+    };
+  });
   for (const button of document.querySelectorAll('.tabs button')) button.addEventListener('click', () => showTab(button.dataset.tab));
   showTab(state.tabs.get(id) ?? 'chat');
   loadDetails();
@@ -174,6 +207,7 @@ async function loadDetails() {
     if (state.current !== id) return;
     state.details = data.details;
     if (state.project) { state.project.links = data.links; renderLinks(); }
+    $('.psize') && ($('.psize').innerHTML = data.details.bytes ? `حجم المشروع على السيرفر: <span class="size">${size(data.details.bytes)}</span>` : '');
     const tab = state.tabs.get(id) ?? 'chat';
     if (tab !== 'chat') renderTab(tab, {keepPlayers: true});
     markTabs();
@@ -224,7 +258,9 @@ function qcHtml(qc) {
   return `<div class="facts">${facts.map((f) => `<span class="fact">${esc(f)}</span>`).join('')}</div>` + (qc.checks?.length ? `<ul class="checks">${qc.checks.map((c) => `<li class="${c.state}">${esc(c.label)}${c.note ? ` <span class="dim">(${esc(c.note)})</span>` : ''}</li>`).join('')}</ul>` : '');
 }
 
+const clipHtml = (d, render) => d.clips?.length ? d.clips.map((c) => `<div class="clip"><h3>كليب: <span class="name">${esc(c.slug.split('--').slice(1).join('--') || c.slug)}</span></h3>${render(c)}</div>`).join('') : '';
 function previewHtml(d) {
+  if (d.clips?.length) return clipHtml(d, (c) => c.renders?.length ? previewHtml({...c, clips: []}) : '<p class="dim">لسه مفيش بريفيو للكليب ده.</p>');
   if (!d.renders?.length) return noProject(state.project?.render ? 'البريفيو بيترندر دلوقتي… هيظهر هنا أول ما يخلص.' : 'لسه مفيش بريفيو. لما Claude يرندر نسخة معاينة هتظهر هنا.');
   let html = d.renders.map((r) => `<div class="vid"><video controls preload="metadata" playsinline src="${media(r.path)}"></video><div><h3>${r.name.includes('delivery') ? 'نسخة التسليم' : 'نسخة معاينة'}</h3><p class="dim">${new Date(r.modified).toLocaleString('ar-EG')}</p>${qcHtml(r.qc)}<div class="downloads"><a href="${media(r.path, true)}">تحميل ⬇</a></div></div></div>`).join('');
   if (d.stills?.length) html += `<div class="sec"><h3>لقطات المراجعة</h3><div class="stills">${d.stills.map((s) => `<a href="${media(s.path)}" target="_blank"><img loading="lazy" src="${media(s.path)}" alt=""></a>`).join('')}</div></div>`;
@@ -239,6 +275,7 @@ function editorHtml() {
 }
 
 function outputHtml(d) {
+  if (d.clips?.length) return clipHtml(d, (c) => c.outputs?.length || c.publish?.length ? outputHtml({...c, clips: []}) : '<p class="dim">لسه ما اتسلّمش.</p>');
   if (!d.outputs?.length && !d.publish?.length) return noProject(state.project?.render?.mode === 'deliver' ? 'النسخة النهائية بتترندر دلوقتي…' : 'لسه مفيش مخرج نهائي. لما Claude يسلّم الفيديو هيظهر هنا.');
   const video = d.outputs.find((f) => /\.(mp4|mov)$/i.test(f.name));
   const cover = d.outputs.find((f) => /\.(jpe?g|png)$/i.test(f.name));
@@ -262,7 +299,7 @@ function wireTab(pane) {
   for (const b of pane.querySelectorAll('[data-say]')) b.addEventListener('click', () => say(b.dataset.say, b));
   for (const b of pane.querySelectorAll('[data-say-from]')) b.addEventListener('click', () => { const box = pane.querySelector(b.dataset.sayFrom); if (box.value.trim()) say(b.dataset.prefix + box.value.trim(), b); });
   for (const b of pane.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
-    const text = state.details.publish[Number(b.dataset.copy)].text;
+    const text = b.closest('.copybox').querySelector('pre').textContent;
     try { await navigator.clipboard.writeText(text); } catch { const t = document.createElement('textarea'); t.value = text; document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); }
     b.textContent = 'اتنسخ ✓'; setTimeout(() => { b.textContent = 'انسخ'; }, 1500);
   });
@@ -331,7 +368,8 @@ function scrollLog(force) {
 function renderHead() {
   const p = state.project; if (!p || !$('.stages')) return;
   const summary = state.projects.get(p.id) ?? p;
-  Object.assign(p, {running: summary.running, waiting: summary.waiting, percent: summary.percent, current: summary.current, stages: summary.stages ?? p.stages});
+  Object.assign(p, {running: summary.running, waiting: summary.waiting, queued: summary.queued, percent: summary.percent, current: summary.current, stages: summary.stages ?? p.stages});
+  $('.queued-box').hidden = !p.queued;
   const [cls, label] = badge(p);
   const b = $('.badge'); b.className = 'badge ' + cls; b.textContent = label;
   let previous = Date.parse(p.createdAt);
@@ -431,6 +469,7 @@ function connect() {
       if (before) notify(before, e.project);
       renderSide(); if (e.project.id === state.current) renderHead(); return;
     }
+    if (e.type === 'removed') { state.projects.delete(e.id); renderSide(); if (e.id === state.current) location.hash = ''; return; }
     if (e.type === 'raw') { api('/api/raw').then((d) => { state.raw = d.files; renderRaw(); }).catch(() => {}); return; }
     if (e.id !== state.current) return;
     if (e.type === 'item') upsertItem(e.item);
@@ -445,6 +484,8 @@ function connect() {
 async function refreshState() {
   const data = await api('/api/state');
   Object.assign(state, {stages: data.stages, styles: data.styles, raw: data.raw});
+  $('#disk').innerHTML = data.disk ? `المساحة الفاضية على السيرفر: <span class="size">${size(data.disk.free)}</span> من <span class="size">${size(data.disk.total)}</span>` : '';
+  $('#logout').hidden = !data.password;
   state.projects = new Map(data.projects.map((p) => [p.id, p]));
   renderSide();
   if (!state.current) { if ($('.new-form') && !$('select[name=style] option:nth-child(2)')) route(); else renderRaw(); }
@@ -458,6 +499,12 @@ function route() {
 $('#new').addEventListener('click', () => { if (location.hash) location.hash = ''; else renderHome(); });
 $('#files').addEventListener('click', () => { if (location.hash) location.hash = ''; else renderHome(); setTimeout(() => $('.rawlist')?.scrollIntoView({behavior: 'smooth'}), 50); });
 $('#menu').addEventListener('click', () => $('#side').classList.toggle('open'));
+$('#settings').addEventListener('click', async () => {
+  const w = window.open('', '_blank');
+  try { const data = await api('/api/settings', {method: 'POST', body: '{}'}); w.opener = null; w.location = data.url; }
+  catch (err) { w.close(); alert(err.message); }
+});
+$('#logout').addEventListener('click', async () => { await api('/api/logout', {method: 'POST', body: '{}'}).catch(() => {}); location.reload(); });
 window.addEventListener('hashchange', route);
 setInterval(() => { if (state.project?.running) renderHead(); }, 1000);
 if ('Notification' in window && Notification.permission === 'default') document.addEventListener('click', () => Notification.requestPermission(), {once: true});

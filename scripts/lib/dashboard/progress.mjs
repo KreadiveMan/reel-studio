@@ -18,8 +18,11 @@ export const STAGES = Object.freeze([
 const exists = async (file) => !!(await fs.stat(file).catch(() => null));
 const anyExists = async (files) => { for (const file of files) if (await exists(file)) return true; return false; };
 
-/** Which stage files exist now. graphics projects (no recording) skip upload and transcript. */
+const clipFolders = async (root, slug) => slug ? (await fs.readdir(path.join(root, 'Projects')).catch(() => [])).filter((name) => name.startsWith(`${slug}--`)) : [];
+
+/** Which stage files exist now. graphics projects (no recording) skip upload and transcript; podcast projects count their clip projects. */
 export async function detectStages(root, {slug, rawFile, kind}) {
+  if (kind === 'podcast') return detectPodcast(root, {slug, rawFile});
   const at = (...parts) => path.join(root, ...parts);
   const p = (...parts) => slug ? at('Projects', slug, ...parts) : null;
   const graphics = kind === 'graphics';
@@ -33,6 +36,27 @@ export async function detectStages(root, {slug, rawFile, kind}) {
     done: !!slug && await exists(at('Outputs', slug, `${slug}.mp4`)),
   };
   // A later stage implies the earlier ones (for example a re-used transcript under another name).
+  let later = false;
+  for (const stage of [...STAGES].reverse()) { if (found[stage.id]) later = true; else if (later) found[stage.id] = true; }
+  return found;
+}
+
+// A podcast batch (instructions/PODCAST.md): the episode's transcript and approved selections, then one studio
+// project per clip, Projects/<batch>--<clip>. A stage counts once any clip reaches it.
+async function detectPodcast(root, {slug, rawFile}) {
+  const at = (...parts) => path.join(root, ...parts);
+  const clips = await clipFolders(root, slug);
+  const some = async (...rel) => { for (const clip of clips) if (await anyExists(rel.map((r) => at('Projects', clip, ...r.split('/'))))) return true; return false; };
+  const outputs = async () => { for (const clip of clips) for (const name of await fs.readdir(at('Outputs', clip)).catch(() => [])) if (/\.(mp4|mov)$/i.test(name)) return true; return false; };
+  const found = {
+    upload: !!rawFile && await exists(at(...rawFile.split('/'))),
+    transcript: !!slug && await anyExists([at('Projects', slug, 'words.json'), at('Projects', slug, 'transcript', 'captions.json'), at('Projects', slug, 'podcast', 'proposals.json')]),
+    plan: !!slug && await anyExists([at('Projects', slug, 'selections.json'), at('Projects', slug, 'podcast', 'batch.json')]),
+    draft: await some('edit.json'),
+    preview: await some('prepared/props.json', 'renders/edit-preview.mp4'),
+    render: await some('renders/edit-delivery.mp4'),
+    done: await outputs(),
+  };
   let later = false;
   for (const stage of [...STAGES].reverse()) { if (found[stage.id]) later = true; else if (later) found[stage.id] = true; }
   return found;
@@ -59,5 +83,6 @@ export function stageSummary(project) {
 /** The studio project folder a tool call touched, e.g. Projects/my-reel/edit.json → my-reel. */
 export function slugFromText(text) {
   const match = /(?:^|[\s"'`=/(])Projects\/([a-z0-9][a-z0-9-]{0,63})\//.exec(String(text ?? ''));
-  return match && !match[1].startsWith('_') ? match[1] : null;
+  // A podcast clip project belongs to its batch: Projects/<batch>--<clip>/ → <batch>.
+  return match && !match[1].startsWith('_') ? match[1].split('--')[0] : null;
 }

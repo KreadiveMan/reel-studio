@@ -59,8 +59,11 @@ function qcSummary(qc) {
     sizeMB: ig?.sizeMB ?? (qc.bytes ? Math.round(qc.bytes / 1e5) / 10 : null), lufs: ig?.loudness?.silent ? null : ig?.loudness?.integratedLUFS ?? null, checks};
 }
 
-export async function projectDetails(root, slug) {
+export async function projectDetails(root, slug, {withClips = true} = {}) {
   if (!slug || !SLUG.test(slug)) return {slug: null};
+  // Podcast clips are full projects of their own (Projects/<batch>--<clip>); show each with its renders and outputs.
+  const clips = [];
+  if (withClips) for (const name of (await fs.readdir(path.join(root, 'Projects')).catch(() => [])).filter((n) => n.startsWith(`${slug}--`)).sort()) clips.push(await projectDetails(root, name, {withClips: false}));
   const dir = path.join(root, 'Projects', slug), outDir = path.join(root, 'Outputs', slug);
   const edit = await readJson(path.join(dir, 'edit.json'));
   const renders = await filesIn(path.join(dir, 'renders'), `Projects/${slug}/renders`, /\.(mp4|mov)$/i);
@@ -80,6 +83,7 @@ export async function projectDetails(root, slug) {
     scenes: scenesOf(edit), cuts: cutsOf(edit), captionsStatus: edit?.captions?.status ?? null,
     renders, outputs, publish, publishPack: await readText(path.join(dir, 'PUBLISH_PACK.md')), qcReport: await readText(path.join(dir, 'QC_REPORT.md')),
     stills: (await filesIn(path.join(dir, 'stills'), `Projects/${slug}/stills`, /\.(jpe?g|png|webp)$/i)).slice(0, 24),
+    clips,
   };
 }
 

@@ -10,6 +10,7 @@ import {DashboardStore} from './store.mjs';
 import {STAGES, detectStages, recordStages, slugFromText, stageSummary} from './progress.mjs';
 import {mediaFile, projectDetails, sendMedia} from './details.mjs';
 import {RENDER_PROGRESS_DIR} from '../render-progress.mjs';
+import {PasswordGate} from './auth.mjs';
 
 // The studio dashboard: projects, uploads into Raw/, a chat with Claude Code running in the studio folder,
 // approve/deny buttons for anything outside the allowlist, and stage progress read from the project files.
@@ -61,10 +62,26 @@ export function firstMessage(project, styleLabel) {
   const style = styleLabel ? ` بستايل ${styleLabel}` : '';
   const notes = project.notes?.trim() ? `\nملاحظاتي: ${project.notes.trim()}` : '';
   if (project.kind === 'graphics') return `اعمل موشن جرافيك من غير تسجيل${style}.\nالفكرة: ${project.notes.trim()}`;
+  if (project.kind === 'podcast') return `طلّع ${project.clips ? `${project.clips} كليبات` : 'كليبات'} من الحلقة ${project.rawFile}${style}.${notes}`;
   return `عدّل الفيديو ${project.rawFile}${style}.${notes}`;
 }
 
-export async function createDashboardServer({root, port = 0, claudeCommand, sessionFactory} = {}) {
+const sizeOf = async (target) => {
+  const stat = await fs.lstat(target).catch(() => null);
+  if (!stat || stat.isSymbolicLink()) return 0;
+  if (!stat.isDirectory()) return stat.size;
+  let total = 0;
+  for (const name of await fs.readdir(target).catch(() => [])) total += await sizeOf(path.join(target, name));
+  return total;
+};
+/** The studio folders a dashboard project owns: its project, podcast clip projects (<slug>--<clip>) and their outputs. */
+async function ownedFolders(root, slug) {
+  if (!slug) return {projects: [], outputs: []};
+  const near = async (dir) => (await fs.readdir(path.join(root, dir)).catch(() => [])).filter((name) => name === slug || name.startsWith(`${slug}--`)).map((name) => path.join(root, dir, name));
+  return {projects: await near('Projects'), outputs: await near('Outputs')};
+}
+
+export async function createDashboardServer({root, port = 0, claudeCommand, sessionFactory, settingsPort = 4381, startSettings} = {}) {
   root = await fs.realpath(root);
   const store = await new DashboardStore(root).open();
   const token = await store.token();
@@ -74,11 +91,13 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
   const clients = new Set();
   const styles = Object.entries(STYLE_LABELS).map(([id, v]) => ({id, label: v.label, description: v.description}));
   const makeSession = sessionFactory ?? ((options) => new ClaudeSession({...options, command: claudeCommand}));
+  const gate = await new PasswordGate(path.join(root, 'state', 'dashboard')).open();
+  let settings = null;
   let origin;
 
   const broadcast = (event) => { const line = `data: ${JSON.stringify(event)}\n\n`; for (const res of clients) res.write(line); };
   const summary = (p) => ({id: p.id, kind: p.kind, title: p.title, rawFile: p.rawFile, slug: p.slug, updatedAt: p.updatedAt, createdAt: p.createdAt,
-    running: !!sessions.get(p.id)?.running, waiting: (pending.get(p.id)?.size ?? 0) > 0, stages: p.stages, activity: p.activity, render: renders.get(p.slug) ?? null, ...stageSummary(p)});
+    running: !!sessions.get(p.id)?.running, waiting: (pending.get(p.id)?.size ?? 0) > 0, queued: !!p.queued, stages: p.stages, activity: p.activity, render: renders.get(p.slug) ?? null, ...stageSummary(p)});
   const full = (p) => ({...p, ...summary(p), pending: [...(pending.get(p.id)?.values() ?? [])]});
   const changed = (p) => broadcast({type: 'project', project: summary(p)});
 
@@ -144,7 +163,19 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
       if (recordStages(project, await detectStages(root, project))) { store.save(project); changed(project); broadcast({type: 'details', id: project.id}); }
     }
   }
-  const poll = setInterval(() => refreshStages().catch(() => {}), 3000);
+  // The queue: a project created while Claude works on another waits, and starts when no project is running.
+  function startQueued() {
+    if ([...sessions.values()].some((session) => session.running)) return;
+    const next = store.list().filter((p) => p.queued).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    if (next) begin(next);
+  }
+  function begin(project) {
+    const text = project.queued.message;
+    project.queued = null;
+    say(project, text);
+    changed(project);
+  }
+  const poll = setInterval(() => refreshStages().then(startQueued).catch(() => {}), 3000);
 
   async function route(req, res, url) {
     const [, api, a, b, c, d] = url.pathname.split('/');
@@ -159,7 +190,27 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
       return send(res, 200, await fs.readFile(path.join(UI, file[0]), 'utf8'), `${file[1]}; charset=utf-8`);
     }
     if (req.method !== 'GET' && req.headers['x-dashboard'] !== '1') throw new HttpError(403, 'الطلب لازم يجي من اللوحة.');
-    if (a === 'state' && req.method === 'GET') return send(res, 200, {ok: true, stages: STAGES, styles, projects: store.list().map(summary), raw: await listRawFiles(root)});
+    if (a === 'state' && req.method === 'GET') {
+      const disk = await fs.statfs(root).then((st) => ({free: st.bavail * st.bsize, total: st.blocks * st.bsize})).catch(() => null);
+      return send(res, 200, {ok: true, stages: STAGES, styles, projects: store.list().map(summary), raw: await listRawFiles(root), disk, password: gate.enabled});
+    }
+    if (a === 'settings' && req.method === 'POST') {
+      if (!settings) {
+        const create = startSettings ?? (async () => (await import('../settings-server.mjs')).createSettingsServer({root, port: settingsPort}));
+        settings = await create().catch((error) => { throw new HttpError(500, error.code === 'EADDRINUSE' ? `بورت ${settingsPort} مشغول؛ اقفل شاشة الإعدادات القديمة.` : error.message); });
+      }
+      return send(res, 200, {ok: true, url: settings.url});
+    }
+    if (a === 'raw' && req.method === 'DELETE') {
+      const name = url.searchParams.get('name') ?? '';
+      const files = await listRawFiles(root);
+      if (!files.some((f) => f.name === name)) throw new HttpError(404, 'الملف مش موجود.');
+      const users = store.list().filter((p) => p.rawFile === `Raw/${name}` && (p.queued || sessions.get(p.id)?.running));
+      if (users.length) throw new HttpError(409, `الفيديو ده مستخدم في مشروع شغال: ${users[0].title}`);
+      await fs.rm(path.join(root, 'Raw', name), {force: true});
+      broadcast({type: 'raw'});
+      return send(res, 200, {ok: true});
+    }
     if (a === 'raw' && req.method === 'GET') return send(res, 200, {ok: true, files: await listRawFiles(root)});
     if (a === 'upload' && req.method === 'PUT') { const result = await receiveUpload(root, req, url); broadcast({type: 'raw'}); return send(res, 200, result); }
     if (a === 'events' && req.method === 'GET') {
@@ -168,27 +219,57 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
     }
     if (a === 'projects' && !b && req.method === 'POST') {
       const body = await bodyJson(req);
-      const kind = body.kind === 'graphics' ? 'graphics' : 'recording';
+      const kind = ['graphics', 'podcast'].includes(body.kind) ? body.kind : 'recording';
       const style = body.style ? styles.find((s) => s.id === body.style) : null;
       if (body.style && !style) throw new HttpError(400, 'الستايل ده مش معروف.');
       const notes = String(body.notes ?? '').slice(0, 4000);
-      let rawFile = null;
-      if (kind === 'recording') {
-        const files = await listRawFiles(root);
-        if (!files.some((f) => `Raw/${f.name}` === body.rawFile)) throw new HttpError(400, 'اختار فيديو من الملفات المرفوعة.');
-        rawFile = body.rawFile;
+      let rawFiles = [null];
+      if (kind !== 'graphics') {
+        const files = new Set((await listRawFiles(root)).map((f) => `Raw/${f.name}`));
+        rawFiles = [...new Set(Array.isArray(body.rawFiles) ? body.rawFiles : [body.rawFile])].filter(Boolean);
+        if (!rawFiles.length || rawFiles.some((f) => !files.has(f))) throw new HttpError(400, 'اختار فيديو من الملفات المرفوعة.');
+        if (kind === 'podcast' && rawFiles.length > 1) throw new HttpError(400, 'اختار حلقة واحدة للبودكاست.');
+        if (rawFiles.length > 20) throw new HttpError(400, 'أقصى عدد 20 فيديو في المرة.');
       } else if (!notes.trim()) throw new HttpError(400, 'اكتب فكرة الموشن.');
-      const title = String(body.title ?? '').trim().slice(0, 80) || (rawFile ? rawFile.slice(4) : notes.trim().slice(0, 40));
-      const project = store.create({kind, title, rawFile, style: style?.id ?? null, notes});
-      recordStages(project, await detectStages(root, project));
-      changed(project);
-      say(project, firstMessage(project, style?.label));
-      return send(res, 200, {ok: true, project: full(project)});
+      const clips = kind === 'podcast' && Number.isInteger(Number(body.clips)) && Number(body.clips) >= 1 && Number(body.clips) <= 10 ? Number(body.clips) : null;
+      const created = [];
+      for (const rawFile of rawFiles) {
+        const named = String(body.title ?? '').trim().slice(0, 80);
+        const title = (named && rawFiles.length > 1 ? `${named} — ${rawFile.slice(4)}` : named) || (rawFile ? rawFile.slice(4) : notes.trim().slice(0, 40));
+        const project = store.create({kind, title, rawFile, style: style?.id ?? null, notes});
+        if (clips) project.clips = clips;
+        recordStages(project, await detectStages(root, project));
+        const busy = [...sessions.values()].some((session) => session.running) || created.length > 0;
+        if (busy) project.queued = {message: firstMessage(project, style?.label), at: new Date().toISOString()};
+        store.touch(project); changed(project);
+        if (!busy) say(project, firstMessage(project, style?.label));
+        created.push(project);
+      }
+      return send(res, 200, {ok: true, project: full(created[0]), projects: created.map(summary)});
     }
     const project = a === 'projects' && b ? store.get(b) : null;
     if (a === 'projects' && !project) throw new HttpError(404, 'المشروع مش موجود.');
     if (project && !c && req.method === 'GET') return send(res, 200, {ok: true, project: {...full(project), links: await liveLinks(project.links)}});
-    if (project && c === 'details' && req.method === 'GET') return send(res, 200, {ok: true, details: await projectDetails(root, project.slug), links: await liveLinks(project.links)});
+    if (project && c === 'details' && req.method === 'GET') {
+      const owned = await ownedFolders(root, project.slug);
+      let bytes = 0; for (const dir of [...owned.projects, ...owned.outputs]) bytes += await sizeOf(dir);
+      return send(res, 200, {ok: true, details: {...await projectDetails(root, project.slug), bytes}, links: await liveLinks(project.links)});
+    }
+    if (project && c === 'start' && req.method === 'POST') {
+      if (!project.queued) throw new HttpError(409, 'المشروع ده مش في الطابور.');
+      begin(project); return send(res, 200, {ok: true});
+    }
+    if (project && !c && req.method === 'DELETE') {
+      const body = await bodyJson(req);
+      if (sessions.get(project.id)?.running) throw new HttpError(409, 'وقّف Claude الأول قبل ما تمسح المشروع.');
+      sessions.get(project.id)?.close(); sessions.delete(project.id); pending.delete(project.id);
+      const owned = await ownedFolders(root, project.slug);
+      const removed = [];
+      for (const dir of [...(body.studio ? owned.projects : []), ...(body.outputs ? owned.outputs : [])]) { await fs.rm(dir, {recursive: true, force: true}); removed.push(path.relative(root, dir).split(path.sep).join('/')); }
+      await store.remove(project.id);
+      broadcast({type: 'removed', id: project.id});
+      return send(res, 200, {ok: true, removed});
+    }
     if (project && c === 'messages' && req.method === 'POST') {
       const text = String((await bodyJson(req)).text ?? '').trim().slice(0, 8000);
       if (!text) throw new HttpError(400, 'اكتب رسالة.');
@@ -229,6 +310,19 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
         res.writeHead(303, {location: '/', 'set-cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`}); return res.end();
       }
       if (!sameToken(cookieToken(req.headers.cookie) ?? req.headers['x-dashboard-token'], token)) throw new HttpError(401, 'افتح الرابط الكامل اللي طبعه أمر اللوحة (فيه token).');
+      // Optional password: a second lock on top of the link, for a server other people can reach.
+      if (gate.enabled) {
+        if (url.pathname === '/api/login' && req.method === 'POST') {
+          const result = await gate.login(String((await bodyJson(req)).password ?? ''), req.socket.remoteAddress);
+          res.writeHead(200, {'content-type': 'application/json; charset=utf-8', 'set-cookie': `${gate.cookie}=${result.session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`});
+          return res.end(JSON.stringify({ok: true}));
+        }
+        if (!gate.valid(req.headers.cookie)) {
+          if (req.method === 'GET' && url.pathname === '/') return send(res, 200, await fs.readFile(path.join(UI, 'login.html'), 'utf8'), 'text/html; charset=utf-8');
+          throw new HttpError(401, 'سجّل الدخول بالباسورد.');
+        }
+        if (url.pathname === '/api/logout' && req.method === 'POST') { gate.logout(req.headers.cookie); return send(res, 200, {ok: true}); }
+      }
       await route(req, res, url);
     } catch (error) {
       if (!res.headersSent) send(res, error.status ?? 500, {ok: false, error: error.status ? error.message : `حصلت مشكلة: ${error.message}`});
@@ -246,6 +340,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
     close: async () => {
       clearInterval(poll); clearInterval(heartbeat);
       for (const session of sessions.values()) session.close();
+      await settings?.close().catch(() => {});
       for (const res of clients) res.end();
       await store.flush();
       await new Promise((resolve) => { server.closeAllConnections(); server.close(() => resolve()); });

@@ -179,3 +179,86 @@ test('media streams through the dashboard with seeking, and only with the sessio
   assert.equal(whole.text, '0123456789'); assert.match(whole.headers['content-disposition'], /attachment/);
   assert.equal((await call(app, {pathname: '/media/Outputs%2Fdemo%2F..%2F..%2FRaw%2Fdemo.mp4'})).status, 404);
 }));
+
+async function finishTurn(app, stream, id) {
+  const permission = await stream.wait((e) => e.type === 'permission' && e.id === id && e.entry.tool === 'Bash');
+  await call(app, {method: 'POST', pathname: `/api/projects/${id}/permissions/${permission.entry.requestId}`, body: {allow: true}});
+  const question = await stream.wait((e) => e.type === 'permission' && e.id === id && e.entry.tool === 'AskUserQuestion');
+  await call(app, {method: 'POST', pathname: `/api/projects/${id}/permissions/${question.entry.requestId}`, body: {allow: false}});
+}
+
+test('several videos become queued projects that start one after another; a podcast names its clip count', async () => withDashboard(async (app, root, stream) => {
+  mkdirSync(path.join(root, 'Raw'));
+  for (const name of ['a.mp4', 'b.mp4', 'ep.mp4']) writeFileSync(path.join(root, 'Raw', name), 'x');
+  const bulk = await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'recording', rawFiles: ['Raw/a.mp4', 'Raw/b.mp4'], title: 'دفعة'}});
+  assert.equal(bulk.status, 200, bulk.text);
+  const [first, second] = bulk.json.projects;
+  assert.equal(first.queued, false); assert.equal(second.queued, true);
+  assert.equal(second.title, 'دفعة — b.mp4');
+  const podcast = await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'podcast', rawFile: 'Raw/ep.mp4', clips: 4}});
+  assert.equal(podcast.json.project.queued, true, 'waits behind the running project');
+  assert.equal((await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'podcast', rawFiles: ['Raw/a.mp4', 'Raw/b.mp4']}})).status, 400);
+  await finishTurn(app, stream, first.id);
+  await stream.wait((e) => e.type === 'item' && e.id === second.id && e.item.role === 'user', 10000);
+  assert.equal(app.store.get(second.id).items[0].text, 'عدّل الفيديو Raw/b.mp4.');
+  assert.equal(app.store.get(podcast.json.project.id).queued.message, 'طلّع 4 كليبات من الحلقة Raw/ep.mp4.', 'still queued while the second runs');
+  assert.equal((await call(app, {method: 'POST', pathname: `/api/projects/${podcast.json.project.id}/start`, body: {}})).status, 200, '«ابدأ دلوقتي» skips the queue');
+  await stream.wait((e) => e.type === 'item' && e.id === podcast.json.project.id && e.item.role === 'user');
+}));
+
+test('deleting a project removes only what was asked, never Raw; a Raw file in use cannot be deleted', async () => withDashboard(async (app, root, stream) => {
+  mkdirSync(path.join(root, 'Raw')); writeFileSync(path.join(root, 'Raw', 'clip.mp4'), 'x');
+  const created = await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'recording', rawFile: 'Raw/clip.mp4'}});
+  const id = created.json.project.id;
+  assert.equal((await call(app, {method: 'DELETE', pathname: `/api/projects/${id}`, body: {}})).status, 409, 'not while Claude works');
+  assert.equal((await call(app, {method: 'DELETE', pathname: '/api/raw?name=clip.mp4', body: {}})).status, 409, 'not while its project runs');
+  await finishTurn(app, stream, id);
+  await stream.wait((e) => e.type === 'project' && e.project.id === id && !e.project.running);
+  for (const dir of ['Projects/test-reel', 'Projects/test-reel--one', 'Outputs/test-reel', 'Projects/other']) mkdirSync(path.join(root, dir), {recursive: true});
+  const removed = await call(app, {method: 'DELETE', pathname: `/api/projects/${id}`, body: {studio: true}});
+  assert.deepEqual(removed.json.removed.sort(), ['Projects/test-reel', 'Projects/test-reel--one']);
+  assert.ok(existsSync(path.join(root, 'Outputs', 'test-reel')), 'outputs kept unless asked');
+  assert.ok(existsSync(path.join(root, 'Projects', 'other')) && existsSync(path.join(root, 'Raw', 'clip.mp4')));
+  assert.equal(app.store.get(id), null);
+  assert.equal((await call(app, {method: 'DELETE', pathname: '/api/raw?name=clip.mp4', body: {}})).status, 200);
+  assert.ok(!existsSync(path.join(root, 'Raw', 'clip.mp4')));
+}));
+
+test('the optional password locks everything behind a login, and wrong tries are slowed down', async () => {
+  const {PasswordGate} = await import('../scripts/lib/dashboard/auth.mjs');
+  const root = mkdtempSync(path.join(ROOT, 'state', 'tmp', 'dashboard-pass-'));
+  await PasswordGate.set(path.join(root, 'state', 'dashboard'), 'correct horse');
+  const app = await createDashboardServer({root, port: 0, claudeCommand: FAKE, startSettings: async () => ({url: 'http://127.0.0.1:4381/?token=s', close: async () => {}})});
+  try {
+    const page = await call(app, {pathname: '/'});
+    assert.match(page.text, /type="password"/, 'the login page');
+    assert.equal((await call(app, {pathname: '/api/state'})).status, 401);
+    assert.equal((await call(app, {method: 'POST', pathname: '/api/login', body: {password: 'wrong'}})).status, 401);
+    const ok = await call(app, {method: 'POST', pathname: '/api/login', body: {password: 'correct horse'}});
+    const session = ok.headers['set-cookie'][0].split(';')[0];
+    const state = await call(app, {pathname: '/api/state', headers: {cookie: `rs_dashboard=${app.token}; ${session}`}});
+    assert.equal(state.status, 200); assert.equal(state.json.password, true); assert.ok(state.json.disk.free > 0);
+    const settings = await call(app, {method: 'POST', pathname: '/api/settings', body: {}, headers: {cookie: `rs_dashboard=${app.token}; ${session}`}});
+    assert.equal(settings.json.url, 'http://127.0.0.1:4381/?token=s');
+    for (let i = 0; i < 5; i++) await call(app, {method: 'POST', pathname: '/api/login', body: {password: 'nope'}});
+    assert.equal((await call(app, {method: 'POST', pathname: '/api/login', body: {password: 'correct horse'}})).status, 429);
+  } finally { await app.close(); rmSync(root, {recursive: true, force: true}); }
+});
+
+test('podcast stages follow the batch and its clip projects', async () => {
+  const root = mkdtempSync(path.join(ROOT, 'state', 'tmp', 'dashboard-podcast-'));
+  try {
+    mkdirSync(path.join(root, 'Raw')); writeFileSync(path.join(root, 'Raw', 'ep.mp4'), 'x');
+    mkdirSync(path.join(root, 'Projects', 'ep', 'podcast'), {recursive: true}); writeFileSync(path.join(root, 'Projects', 'ep', 'selections.json'), '{}');
+    mkdirSync(path.join(root, 'Projects', 'ep--one', 'prepared'), {recursive: true}); writeFileSync(path.join(root, 'Projects', 'ep--one', 'edit.json'), '{}');
+    const project = {kind: 'podcast', slug: 'ep', rawFile: 'Raw/ep.mp4', stages: {}};
+    recordStages(project, await detectStages(root, project));
+    assert.deepEqual(Object.keys(project.stages), ['upload', 'transcript', 'plan', 'draft']);
+    mkdirSync(path.join(root, 'Outputs', 'ep--one'), {recursive: true}); writeFileSync(path.join(root, 'Outputs', 'ep--one', 'ep--one.mp4'), 'v');
+    recordStages(project, await detectStages(root, project));
+    assert.equal(stageSummary(project).current, null);
+    assert.equal(slugFromText('Projects/ep--one/edit.json'), 'ep');
+    const {projectDetails} = await import('../scripts/lib/dashboard/details.mjs');
+    assert.deepEqual((await projectDetails(root, 'ep')).clips.map((c) => [c.slug, c.outputs.length]), [['ep--one', 1]]);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});

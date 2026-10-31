@@ -59,6 +59,12 @@ export class DashboardStore {
     return entry;
   }
 
+  async remove(id) {
+    clearTimeout(this.timers.get(id)); this.timers.delete(id);
+    this.projects.delete(id);
+    await fs.rm(path.join(this.projectsDir, `${id}.json`), {force: true});
+  }
+
   touch(project) { project.updatedAt = new Date().toISOString(); this.save(project); }
 
   save(project, {now = false} = {}) {
@@ -71,7 +77,7 @@ export class DashboardStore {
       await fs.rename(temporary, file);
     };
     if (now) return write();
-    this.timers.set(project.id, setTimeout(() => write().catch(() => {}), 400));
+    this.timers.set(project.id, setTimeout(() => { if (this.projects.has(project.id)) write().catch(() => {}); }, 400));
   }
 
   async flush() {
