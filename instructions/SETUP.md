@@ -7,6 +7,10 @@ The studio folder is also the user's workspace. All downloads, dependencies and 
 Run `node --version`. v22.20.0 or newer: use `node`. Missing or older: run
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-node.ps1` (forward slash: it works in PowerShell, cmd and Git Bash). It installs the pinned portable Node into `Tools\node\` (hash-checked, no admin) and prints `{"ok":true,"node":"<path>"}`. Use that path in place of `node` in every command in this folder for the rest of the session.
 
+## Linux x64 hosts (servers and cloud sessions)
+
+The studio also runs on Linux x64; `scripts/lib/platform.mjs` and `platforms.linux-x64` in `versions.lock.json` hold the differences. Setup itself is the same `node scripts/studio.mjs setup`. It needs a system Node 22.20+, `git`, `cmake`, a C++ compiler and the distribution FFmpeg 6.0+ with libx264 (`sudo apt-get install -y ffmpeg git cmake build-essential`); these are system installs, so ask before running that line. On Linux setup uses the pinned Chrome headless shell for linux64, copies the checked system FFmpeg into `Tools/bin/` (also as `ffmpeg.exe`/`ffprobe.exe` for the prepared-plate key), and builds the pinned whisper.cpp commit with CPU-only CMake flags in about a minute. A system FFmpeg upgrade makes the ffmpeg step run again. The live editor and settings screens serve on localhost, so a remote host needs its own way to reach that port.
+
 ## Every session
 
 1. Run `node scripts/studio.mjs check` once. If it says a new version exists, tell the user that one line and carry on. Never update unasked.

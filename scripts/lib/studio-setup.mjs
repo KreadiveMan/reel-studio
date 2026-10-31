@@ -5,6 +5,8 @@ import path from 'node:path';
 import {resolveNpmCommand} from './npm-command.mjs';
 import {downloadVerified, sha256File} from './studio-download.mjs';
 import {checkEngineDependencies, dependencyProblem, moduleDirectoryProblem} from './engine-dependencies.mjs';
+import {installSystemFfmpeg, verifySystemFfmpeg} from './ffmpeg-system.mjs';
+import {toolPath} from './platform.mjs';
 
 
 
@@ -130,15 +132,15 @@ export function setupSteps(root, lock) {
     },
     {
       id: 'ffmpeg',
-      key: async () => lock.ffmpeg.sha256,
+      key: async () => lock.ffmpeg.source === 'system' ? `system:${lock.ffmpeg.minVersion}` : lock.ffmpeg.sha256,
       verify: async () => {
+        if (lock.ffmpeg.source === 'system') return verifySystemFfmpeg(root);
         const report = await fs.readFile(at('Tools/bin/ffmpeg-install.json'), 'utf8').then(JSON.parse).catch(() => null);
         return report?.ok === true && report.archiveSha256 === lock.ffmpeg.sha256
-          && (await exists(at('Tools/bin/ffmpeg.exe'))) && (await exists(at('Tools/bin/ffprobe.exe')));
+          && (await exists(toolPath(root, 'ffmpeg'))) && (await exists(toolPath(root, 'ffprobe')));
       },
       run: async (log) => {
-
-
+        if (lock.ffmpeg.source === 'system') { await installSystemFfmpeg(root, lock.ffmpeg, {log}); return; }
         await downloadVerified({url: lock.ffmpeg.url, sha256: lock.ffmpeg.sha256, bytes: lock.ffmpeg.bytes, target: ffmpegArchive});
         log('ffmpeg: archive verified, extracting');
         await runProcess(process.execPath, [at('scripts/install-ffmpeg.mjs')], {cwd: root});

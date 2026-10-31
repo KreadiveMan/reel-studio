@@ -1,4 +1,5 @@
 import './project-tmp.mjs';
+import { exeName, toolRelative } from './platform.mjs';
 import fs from 'node:fs';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
@@ -141,8 +142,8 @@ export async function transcribeMedia(args, { onProgress = message => console.er
   let runtime;
   try { runtime = JSON.parse(await fsp.readFile(WHISPER_RUNTIME_FILE, 'utf8')); } catch { throw new Error('Transcription is not installed yet. Run node scripts/studio.mjs setup; it installs only what is missing.'); }
   const toolsDir = path.join(ROOT, 'Tools', 'bin');
-  const ffmpeg = path.join(toolsDir, 'ffmpeg.exe'), ffprobe = path.join(toolsDir, 'ffprobe.exe');
-  if (!fs.existsSync(ffmpeg) || !fs.existsSync(ffprobe)) throw new Error('Project-local Tools/bin/ffmpeg.exe and ffprobe.exe are required.');
+  const ffmpeg = path.join(toolsDir, exeName('ffmpeg')), ffprobe = path.join(toolsDir, exeName('ffprobe'));
+  if (!fs.existsSync(ffmpeg) || !fs.existsSync(ffprobe)) throw new Error(`Project-local ${toolRelative('ffmpeg')} and ${toolRelative('ffprobe')} are required.`);
   onProgress('Hashing source and model; checking the installed CPU runtime.');
   const [sourceSha256, model, actualRuntime, audioProbe, ffmpegSha256] = await Promise.all([
     sha256File(source), resolveWhisperModel(options.model), inspectWhisperRuntime(runtime.directory, { expectedBinaryFiles: runtime.binaryFiles }), probeAudio(ffprobe, source), sha256File(ffmpeg),

@@ -17,7 +17,7 @@ async function stage(t) {
   // branding.mjs validates the optional cartoon character with the same Node-safe module the scenes use.
   const cartoonFiles = ['engine/src/styles/cartoon/scenes/character.ts', 'engine/src/styles/cartoon/scenes/kit/narrator/presets.ts'];
   const files = ['scripts/studio.mjs', 'versions.lock.json', 'engine/src/core/preference-options.ts', 'engine/src/creative-kit/styles.ts', ...styleFiles, ...cartoonFiles,
-    ...['project-tmp', 'project-paths', 'branding', 'studio-doctor', 'studio-git', 'studio-lock', 'studio-setup', 'studio-state', 'studio-download', 'npm-command', 'engine-dependencies'].map(name => `scripts/lib/${name}.mjs`)];
+    ...['project-tmp', 'project-paths', 'branding', 'studio-doctor', 'studio-git', 'studio-lock', 'studio-setup', 'studio-state', 'studio-download', 'npm-command', 'engine-dependencies', 'platform', 'ffmpeg-system'].map(name => `scripts/lib/${name}.mjs`)];
   for (const file of files) {
     await fs.mkdir(path.dirname(path.join(root, file)), {recursive: true});
     await fs.copyFile(path.join(ROOT, file), path.join(root, file));

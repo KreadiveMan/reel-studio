@@ -9,9 +9,10 @@ import { createHash } from 'node:crypto';
 import { ROOT } from './project-paths.mjs';
 import { CACHE_DIR, fileKey } from './media.mjs';
 import { normalizeMixOptions, mixOutputPath, chooseMixSfxGain, chooseGraphicsSfx, parseMixStemStats, parseMixLoudness, assessMixDelivery, assessGraphicsSilence, VOICE_SILENCE, buildVoiceChain, buildVoiceMeasureFilter, buildMixFilterGraph, buildGraphicsMixFilterGraph, planLoudnessCompensation, parseSilenceSpans, silenceSpansFromAudioCache, selectFloorWindows, parseRmsLevelDb, estimateNoiseFloorDb, decideDenoise } from './mix-contract.mjs';
+import { toolPath } from './platform.mjs';
 
 const execute = promisify(execFile);
-const ffmpeg = path.join(ROOT, 'Tools/bin/ffmpeg.exe'), ffprobe = path.join(ROOT, 'Tools/bin/ffprobe.exe');
+const ffmpeg = toolPath(ROOT, 'ffmpeg'), ffprobe = toolPath(ROOT, 'ffprobe');
 async function hashFile(file) { const hash = createHash('sha256'); for await (const chunk of fs.createReadStream(file)) hash.update(chunk); return hash.digest('hex'); }
 async function writeReport(file, value) { mixOutputPath(file); await fsp.mkdir(path.dirname(file), { recursive: true }); await fsp.writeFile(file, JSON.stringify(value, null, 2) + '\n', 'utf8'); }
 async function assertInput(file) {

@@ -1,3 +1,4 @@
+import { browserExeRelative } from './platform.mjs';
 // The person matte: cuts the speaker out of a named source video and writes an alpha clip a layered-speaker scene can use.
 //
 //   source frames --ffmpeg--> RGBA --local Chromium + MediaPipe Image Segmenter (CPU)--> person confidence --refine--> alpha
@@ -34,7 +35,7 @@ export const MATTE_MODEL = Object.freeze({
   homepage: PIN.homepage,
 });
 
-const BROWSER = ['engine', 'node_modules', '.remotion', 'chrome-headless-shell', 'win64', 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'];
+const BROWSER = ['engine', 'node_modules', '.remotion', ...browserExeRelative().split('/')];
 const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/');
 
 async function sha256Of(file) {

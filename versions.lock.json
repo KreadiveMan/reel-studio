@@ -922,5 +922,47 @@
       "license": "Each package's own license file",
       "homepage": "https://www.npmjs.com"
     }
-  ]
+  ],
+  "platforms": {
+    "linux-x64": {
+      "browser": {
+        "url": "https://storage.googleapis.com/chrome-for-testing-public/149.0.7790.0/linux64/chrome-headless-shell-linux64.zip",
+        "exe": "chrome-headless-shell/linux64/chrome-headless-shell-linux64/chrome-headless-shell",
+        "exeSha256": "47e823e3a14b431ffa8dc88f97db6a854cd92e04800c01fc765c16a18d393d72"
+      },
+      "ffmpeg": {
+        "source": "system",
+        "minVersion": "6.0",
+        "filters": [
+          "ebur128",
+          "loudnorm",
+          "sidechaincompress"
+        ],
+        "encoders": [
+          "libx264",
+          "aac"
+        ],
+        "install": "sudo apt-get install -y ffmpeg",
+        "license": "LGPL-2.1-or-later / GPL-2.0-or-later (distribution package)",
+        "homepage": "https://ffmpeg.org"
+      },
+      "transcription": {
+        "runtime": {
+          "source": "git",
+          "repository": "https://github.com/ggml-org/whisper.cpp.git",
+          "commit": "371b5a7561823ab2bb32142d2751e35e7534727b",
+          "cmake": [
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DGGML_NATIVE=OFF",
+            "-DGGML_OPENMP=ON",
+            "-DWHISPER_BUILD_TESTS=OFF",
+            "-DWHISPER_BUILD_SERVER=OFF",
+            "-DWHISPER_SDL2=OFF"
+          ],
+          "target": "whisper-cli"
+        }
+      }
+    }
+  }
 }

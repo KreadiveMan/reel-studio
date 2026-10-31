@@ -1,6 +1,7 @@
 import './project-tmp.mjs';
 import fs from 'node:fs';
 import { promises as fsp } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,6 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { ROOT } from './media.mjs';
 import { sha256File, transcriptionCacheKey, assertTranscriptionOutputPath, writeTranscriptionJson } from './transcription.mjs';
 import { downloadVerified, renameWithRetry } from './studio-download.mjs';
+import { PLATFORM, exeName } from './platform.mjs';
 
 export const DEFAULT_WHISPER_RELEASE = 'b4938';
 export const WHISPER_RUNTIME_FILE = path.join(ROOT, 'Tools', 'whisper-runtime.json');
@@ -63,11 +65,14 @@ const allFiles = async dir => (await Promise.all((await fsp.readdir(dir, { withF
 async function hashWhisperRuntime(directory) {
   assertTranscriptionOutputPath(directory);
   const files = await allFiles(directory);
-  const executable = files.find(file => path.basename(file).toLowerCase() === 'whisper-cli.exe');
-  if (!executable) throw new Error('No whisper-cli.exe found in the installed archive.');
+  // Windows archives carry whisper-cli.exe with DLLs; Linux source builds carry whisper-cli (and any .so files).
+  const names = [exeName('whisper-cli'), 'whisper-cli.exe', 'whisper-cli'];
+  const executable = names.map(name => files.find(file => path.basename(file).toLowerCase() === name)).find(Boolean);
+  if (!executable) throw new Error(`No ${exeName('whisper-cli')} found in the installed runtime.`);
   assertTranscriptionOutputPath(executable);
   const binaryFiles = {};
-  for (const file of files.filter(file => /\.(dll|exe)$/i.test(file)).sort()) {
+  const binary = file => file === executable || /\.(dll|exe)$/i.test(file) || /\.so(\.\d+)*$/.test(file);
+  for (const file of files.filter(binary).sort()) {
     assertTranscriptionOutputPath(file);
     binaryFiles[path.relative(directory, file)] = await sha256File(file);
   }
@@ -135,8 +140,44 @@ export async function inspectWhisperRuntime(directory, options = {}) {
   return probeWhisperRuntime(actual);
 }
 
+// Linux: whisper.cpp publishes no Linux CPU binary, so setup builds the pinned commit from the official
+// repository with the pinned CMake flags. The build is CPU-only and portable (GGML_NATIVE=OFF), and the
+// resulting binary is hashed into install.json exactly like the Windows archive contents.
+const runChecked = (command, args, options) => {
+  const result = spawnSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30 * 60 * 1000, ...options });
+  if (result.error) throw new Error(`${command} could not start: ${result.error.message}`);
+  if (result.status !== 0) throw new Error(`${command} ${args[0]} failed (exit ${result.status}): ${(result.stderr || result.stdout).trim().split(/\r?\n/).slice(-5).join(' | ')}`);
+  return result.stdout;
+};
+
+export function buildWhisperFromSource(runtime, sourceDir, destination, { run = runChecked, log = () => {} } = {}) {
+  for (const tool of ['git', 'cmake']) {
+    try { run(tool, ['--version'], {}); }
+    catch { throw new Error(`Building whisper.cpp on Linux needs ${tool} and a C++ compiler (sudo apt-get install -y git cmake build-essential), then run node scripts/studio.mjs setup again.`); }
+  }
+  const head = () => { try { return run('git', ['-C', sourceDir, 'rev-parse', 'HEAD'], {}).trim(); } catch { return null; } };
+  if (head() !== runtime.commit) {
+    fs.rmSync(sourceDir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(sourceDir), { recursive: true });
+    log(`transcription: fetching whisper.cpp ${runtime.release} source`);
+    run('git', ['init', '-q', sourceDir], {});
+    run('git', ['-C', sourceDir, 'fetch', '-q', '--depth', '1', runtime.repository, runtime.commit], {});
+    run('git', ['-C', sourceDir, '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD'], {});
+    if (head() !== runtime.commit) throw new Error(`whisper.cpp source is not the pinned commit ${runtime.commit}.`);
+  }
+  const build = path.join(sourceDir, 'build');
+  log('transcription: building whisper-cli (about a minute)');
+  run('cmake', ['-S', sourceDir, '-B', build, ...runtime.cmake], {});
+  run('cmake', ['--build', build, '--config', 'Release', '--target', runtime.target, '-j', String(Math.max(1, os.availableParallelism()))], {});
+  fs.mkdirSync(path.join(destination, 'bin'), { recursive: true });
+  fs.copyFileSync(path.join(build, 'bin', runtime.target), path.join(destination, 'bin', runtime.target));
+  fs.chmodSync(path.join(destination, 'bin', runtime.target), 0o755);
+}
+
+const hostSupported = runtime => (PLATFORM === 'win32-x64' && runtime?.source !== 'git') || (PLATFORM === 'linux-x64' && runtime?.source === 'git');
+
 export async function installWhisper({ releaseTag = DEFAULT_WHISPER_RELEASE, model = 'medium', withVad = false } = {}) {
-  if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('This installer is scoped to the project Windows x64 host.');
+  if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('This release-lookup installer is scoped to Windows x64; on Linux run node scripts/studio.mjs setup, which builds the pinned whisper.cpp.');
   if (!/^(?:b\d+|v\d+\.\d+\.\d+)$/.test(releaseTag)) throw new Error('Use an explicit official release tag, for example b4938.');
   const response = await fetch(`https://api.github.com/repos/ggml-org/whisper.cpp/releases/tags/${releaseTag}`, { headers: { Accept: 'application/vnd.github+json' } });
   if (!response.ok) throw new Error(`Release lookup failed: HTTP ${response.status}. No silent version fallback.`);
@@ -168,7 +209,7 @@ export async function installWhisper({ releaseTag = DEFAULT_WHISPER_RELEASE, mod
 export function pinnedWhisperPaths({ runtime, model, vad }, root = ROOT) {
   const at = relative => path.join(root, ...relative.split('/'));
   return {
-    archive: at(`state/cache/downloads/whisper-${runtime.release}-x64.zip`),
+    archive: runtime.source === 'git' ? at(`state/cache/src/whisper-${runtime.release}`) : at(`state/cache/downloads/whisper-${runtime.release}-x64.zip`),
     directory: at(`Tools/whisper-${runtime.release}`),
     model: at(model.path),
     vad: at(vad.path),
@@ -178,9 +219,15 @@ export function pinnedWhisperPaths({ runtime, model, vad }, root = ROOT) {
 
 // Setup's transcription step: the runtime, model and VAD pinned in versions.lock.json, verified files reused.
 export async function installPinnedWhisper(pins, { root = ROOT, download = downloadVerified, extract = extractRuntime, inspect = inspectWhisperRuntime, log = () => {} } = {}) {
-  if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('This installer is scoped to the project Windows x64 host.');
   const { runtime, model, vad } = pins;
+  // The real extractor installs a runnable binary, so it must match this host; injected stand-ins (tests) need not.
+  if (extract === extractRuntime && !hostSupported(runtime)) throw new Error(`Transcription setup supports Windows x64 and Linux x64; this host is ${PLATFORM}.`);
   const paths = pinnedWhisperPaths(pins, root);
+  if (runtime.source === 'git' && !fs.existsSync(path.join(paths.directory, 'install.json'))) {
+    log(`transcription: whisper.cpp ${runtime.release} (${runtime.commit.slice(0, 12)})`);
+    await extract({ archive: paths.archive, directory: paths.directory, record: { releaseTag: runtime.release, releaseUrl: `https://github.com/ggml-org/whisper.cpp/releases/tag/${runtime.release}`, releaseCommit: runtime.commit, sourceRepository: runtime.repository, cmake: runtime.cmake } },
+      { unzip: (source, destination) => buildWhisperFromSource(runtime, source, destination, { log }) });
+  }
   if (!fs.existsSync(path.join(paths.directory, 'install.json'))) {
     log(`transcription: whisper.cpp ${runtime.release}`);
     await download({ url: runtime.url, sha256: runtime.sha256, bytes: runtime.bytes, target: paths.archive });

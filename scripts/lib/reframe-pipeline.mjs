@@ -7,6 +7,7 @@ import { assertProjectOutput } from './project-paths.mjs';
 import { checkedPath, fileSnapshot, digest } from './job-paths.mjs';
 import { withOutputTransaction } from './delivery.mjs';
 import { displayGeometry, outputGeometry, planReframe, cropCommands, trackingSettings } from './reframe-core.mjs';
+import { toolRelative } from './platform.mjs';
 
 const relative = (file) => path.relative(ROOT, file).split(path.sep).join('/');
 const fraction = (value) => { const [n, d] = String(value ?? '0/1').split('/').map(Number); return n / d; };
@@ -38,7 +39,7 @@ async function codeIdentity() {
 }
 
 async function ffmpegIdentity() {
-  return { binary: await fileSnapshot('Tools/bin/ffmpeg.exe'), version: (await run('ffmpeg', ['-version'])).stdout.split(/\r?\n/)[0] };
+  return { binary: await fileSnapshot(toolRelative('ffmpeg')), version: (await run('ffmpeg', ['-version'])).stdout.split(/\r?\n/)[0] };
 }
 
 export async function analyzeReframe({ source, startSec = 0, durationSec, sampleFps = 5, analysisMaxEdge = 640, minConfidence = 0.5, force = false, log = () => {} }) {

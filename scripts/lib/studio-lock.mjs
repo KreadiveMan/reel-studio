@@ -1,5 +1,6 @@
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
+import {platformLock} from './platform.mjs';
 
 export const LOCK_FILE = 'versions.lock.json';
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -77,10 +78,37 @@ export function validateLock(lock) {
     if (!text(notice?.name)) problems.push(`notices[${index}].name is missing`);
     checkSource(problems, `notices[${index}]`, notice);
   }
+  checkPlatforms(problems, lock.platforms);
   if (problems.length) throw new Error(`versions.lock.json is invalid:\n- ${problems.join('\n- ')}`);
   return lock;
 }
 
+// Optional per-host pins (see scripts/lib/platform.mjs). Only linux-x64 exists today.
+function checkPlatforms(problems, platforms) {
+  if (platforms === undefined) return;
+  if (!platforms || typeof platforms !== 'object' || Array.isArray(platforms)) { problems.push('platforms must be an object'); return; }
+  for (const [key, entry] of Object.entries(platforms)) {
+    const name = `platforms.${key}`;
+    if (key !== 'linux-x64') { problems.push(`${name} is not a supported platform`); continue; }
+    const browser = entry?.browser;
+    if (!https(browser?.url)) problems.push(`${name}.browser.url must be an https URL`);
+    if (!relative(browser?.exe) || !browser.exe.startsWith('chrome-headless-shell/')) problems.push(`${name}.browser.exe must be a relative path under chrome-headless-shell/`);
+    if (!SHA256.test(browser?.exeSha256 ?? '')) problems.push(`${name}.browser.exeSha256 must be 64 lowercase hex characters`);
+    const ffmpeg = entry?.ffmpeg;
+    if (ffmpeg?.source !== 'system') problems.push(`${name}.ffmpeg.source must be "system"`);
+    if (!/^\d+\.\d+$/.test(ffmpeg?.minVersion ?? '')) problems.push(`${name}.ffmpeg.minVersion must look like 6.0`);
+    for (const list of ['filters', 'encoders']) if (!Array.isArray(ffmpeg?.[list]) || !ffmpeg[list].every(text)) problems.push(`${name}.ffmpeg.${list} must be a list of names`);
+    checkSource(problems, `${name}.ffmpeg`, ffmpeg);
+    const runtime = entry?.transcription?.runtime;
+    if (runtime?.source !== 'git') problems.push(`${name}.transcription.runtime.source must be "git"`);
+    if (!https(runtime?.repository)) problems.push(`${name}.transcription.runtime.repository must be an https URL`);
+    if (!/^[a-f0-9]{40}$/.test(runtime?.commit ?? '')) problems.push(`${name}.transcription.runtime.commit must be a full commit hash`);
+    if (!Array.isArray(runtime?.cmake) || !runtime.cmake.every((flag) => typeof flag === 'string' && flag.startsWith('-D'))) problems.push(`${name}.transcription.runtime.cmake must be a list of -D flags`);
+    if (!text(runtime?.target)) problems.push(`${name}.transcription.runtime.target is missing`);
+  }
+}
+
+/** The validated lock with this host's platform pins applied. */
 export async function readLock(root) {
-  return validateLock(JSON.parse(await fs.readFile(path.join(root, LOCK_FILE), 'utf8')));
+  return platformLock(validateLock(JSON.parse(await fs.readFile(path.join(root, LOCK_FILE), 'utf8'))));
 }

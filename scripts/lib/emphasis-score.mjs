@@ -13,6 +13,7 @@
 //  - digits, Latin product names and the CTA keyword get lexical boosts;
 //  - without a usable head envelope every proposal is NEEDS-REVIEW with anchor null.
 import {anchorForBox, capScale} from '../../engine/src/core/camera.ts';
+import { toolRelative } from './platform.mjs';
 
 export const EMPHASIS_DEFAULTS = Object.freeze({
   hopSec: 0.01,
@@ -49,7 +50,7 @@ export function parseWav(buf) {
   if (!fmt || dataOff < 0) throw new Error('WAV has no fmt/data chunk.');
   if ((fmt.format !== 1 && fmt.format !== 0xfffe) || fmt.bits !== 16 || fmt.channels !== 1) {
     throw new Error(`Expected 16-bit PCM mono WAV, got format ${fmt.format}, ${fmt.bits}-bit, ${fmt.channels} channel(s). ` +
-      'Extract it with: Tools/bin/ffmpeg.exe -v error -i <source> -vn -ac 1 -ar 16000 -c:a pcm_s16le <out.wav>');
+      `Extract it with: ${toolRelative('ffmpeg')} -v error -i <source> -vn -ac 1 -ar 16000 -c:a pcm_s16le <out.wav>`);
   }
   const n = Math.min(dataLen, buf.length - dataOff) >> 1;
   const samples = new Float32Array(n);
