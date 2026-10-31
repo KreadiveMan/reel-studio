@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {styleCheckProps} from './helpers/v4-style-check.mjs';
 import {bundleEngine,setSsrFrame} from './helpers/engine-bundle.mjs';
 import {compileEdit} from '../engine/src/prepared-edit/timeline.ts';
 import {footageFrameState} from '../engine/src/prepared-edit/footage.ts';
@@ -44,7 +44,7 @@ function tree(html){
  return nodes;
 }
 const ancestors=node=>{const rows=[];for(let p=node.parent;p?.parent;p=p.parent)rows.push(p);return rows;};
-const readProps=style=>JSON.parse(readFileSync(new URL(`../Projects/v4-style-check/${style}.props.json`,import.meta.url),'utf8'));
+const readProps=style=>styleCheckProps(style);
 
 for(const [kind,style] of [['ink-slab','kinetic-paper'],['lens-zoom','liquid-glass'],['magazine-flip','magazine-interview']]){
  for(const layout of kind==='magazine-flip'?['split']:['presenter','split'])test(`${kind}: ${layout} into takeover retains the single plate, outgoing geometry and uncovered picture`,()=>{

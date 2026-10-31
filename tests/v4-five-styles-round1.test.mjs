@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {styleCheckProps} from './helpers/v4-style-check.mjs';
 import {bundleEngine,setSsrFrame} from './helpers/engine-bundle.mjs';
 import {sceneCues} from '../scripts/lib/scene-cues.mjs';
 import {ARABIC_SCENES} from './fixtures/arabic-scenes.mjs';
@@ -152,4 +152,4 @@ test('gather, focus, closing and evidence durations control the matching visible
   assert.ok(Math.abs(metric(at('paper-collage',evidence,frame+duration/2),'data-evidence-reveal')-.5)<.001);
  }
 });
-for(const style of styles)test(style+': supplied footage check props are readable and never rendered here',()=>{const p=JSON.parse(readFileSync('Projects/v4-style-check/'+style+'.props.json'));assert.equal(p.edit.style,style);assert.equal(p.edit.fontFamily,'Cairo');});
+for(const style of styles)test(style+': supplied footage check props are readable and never rendered here',()=>{const p=styleCheckProps(style);assert.equal(p.edit.style,style);assert.equal(p.edit.fontFamily,'Cairo');});

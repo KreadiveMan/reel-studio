@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {styleCheckProps} from './helpers/v4-style-check.mjs';
 import {bundleEngine, setSsrFrame} from './helpers/engine-bundle.mjs';
 import {getPreviewDefinition} from '../engine/src/library-preview/fixtures.ts';
 import {ARABIC_SCENES} from './fixtures/arabic-scenes.mjs';
@@ -22,7 +22,7 @@ const api = await bundleEngine(`
 `, {ssr:true,media:true});
 const fonts = [null,'Cairo','Tajawal'];
 const fixture = family => structuredClone(ARABIC_SCENES.find(s=>s.family===family) ?? getPreviewDefinition('scene:'+family).fixture.scene);
-const footage = (style,family) => JSON.parse(readFileSync('Projects/v4-style-check/'+style+'.props.json','utf8')).edit.scenes.find(s=>s.family===family);
+const footage = (style,family) => styleCheckProps(style).edit.scenes.find(s=>s.family===family);
 const render = (style,scene,frame,font='Cairo',head=null) => {setSsrFrame(frame); return tree(api.render(style,scene,font,head));};
 function tree(html) {
   const root={attrs:{},style:{},children:[]}, stack=[root];
