@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>رفع الفيديوهات — Reel Studio</title>
+<style>
+  :root { --bg:#0f1720; --card:#17212c; --line:#26323f; --text:#e8eef4; --dim:#93a3b3; --accent:#4d8dff; --ok:#3ccf8e; --bad:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui, "Segoe UI", Tahoma, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:760px; margin:0 auto; padding:28px 18px 60px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  p.lead { color:var(--dim); margin:0 0 22px; }
+  #drop { border:2px dashed var(--line); border-radius:14px; padding:38px 18px; text-align:center; background:var(--card); cursor:pointer; transition:.15s; }
+  #drop.over { border-color:var(--accent); background:#1b2a3c; }
+  #drop strong { display:block; font-size:19px; margin-bottom:6px; }
+  #drop span { color:var(--dim); font-size:14px; }
+  button { font:inherit; background:var(--accent); color:white; border:0; border-radius:10px; padding:10px 18px; cursor:pointer; margin-top:14px; }
+  h2 { font-size:17px; margin:30px 0 10px; }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:8px; }
+  .row .top { display:flex; justify-content:space-between; gap:12px; }
+  .name { direction:ltr; text-align:left; overflow-wrap:anywhere; font-family:ui-monospace, Consolas, monospace; font-size:14px; }
+  #queue { margin-top:14px; }
+  .meta { color:var(--dim); font-size:13px; white-space:nowrap; direction:ltr; }
+  .bar { height:6px; background:var(--line); border-radius:4px; margin-top:8px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  .done .bar i { background:var(--ok); } .fail .bar i { background:var(--bad); }
+  .msg { font-size:13px; margin-top:6px; color:var(--dim); } .fail .msg { color:var(--bad); } .done .msg { color:var(--ok); }
+  .empty { color:var(--dim); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>رفع الفيديوهات للاستوديو</h1>
+  <p class="lead">الملفات بتتحط في فولدر <b>Raw</b> على السيرفر. ولو فيه ملف بنفس الاسم، الملف القديم بيفضل زي ما هو والجديد بياخد رقم في آخر اسمه.</p>
+
+  <div id="drop" tabindex="0">
+    <strong>اسحب الفيديوهات هنا</strong>
+    <span>أو اضغط واختارها من جهازك — فيديو، صوت أو صور</span><br>
+    <button type="button">اختار ملفات</button>
+    <input id="pick" type="file" multiple hidden accept="video/*,audio/*,image/*">
+  </div>
+
+  <div id="queue"></div>
+
+  <h2>الموجود في Raw</h2>
+  <div id="files"><p class="empty">بحمّل…</p></div>
+</main>
+<script>
+const TOKEN = '__TOKEN__';
+const $ = (s) => document.querySelector(s);
+const size = (b) => b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(2) + ' GB' : b >= 1024 ** 2 ? (b / 1024 ** 2).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/files', {headers: {'x-upload-token': TOKEN}});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    $('#files').innerHTML = data.files.length ? data.files.map((f) =>
+      `<div class="row"><div class="top"><span class="name">Raw/${esc(f.name)}</span><span class="meta">${size(f.bytes)}</span></div></div>`).join('')
+      : '<p class="empty">لسه مفيش ملفات.</p>';
+  } catch (error) { $('#files').innerHTML = `<p class="empty">${esc(error.message || 'السيرفر مش بيرد. اتأكد إن نافذة SSH لسه مفتوحة.')}</p>`; }
+}
+
+let chain = Promise.resolve();
+function enqueue(files) {
+  for (const file of files) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<div class="top"><span class="name">${esc(file.name)}</span><span class="meta">${size(file.size)}</span></div><div class="bar"><i></i></div><div class="msg">مستني دوره…</div>`;
+    $('#queue').prepend(row);
+    chain = chain.then(() => upload(file, row));
+  }
+}
+
+function upload(file, row) {
+  return new Promise((resolve) => {
+    const bar = row.querySelector('.bar i'), msg = row.querySelector('.msg');
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', '/api/upload?name=' + encodeURIComponent(file.name));
+    xhr.setRequestHeader('x-upload-token', TOKEN);
+    const started = Date.now();
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = e.loaded / e.total * 100, secs = (Date.now() - started) / 1000;
+      bar.style.width = pct.toFixed(1) + '%';
+      msg.textContent = `${pct.toFixed(0)}% — ${size(e.loaded / Math.max(secs, .1))}/ث`;
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status === 200 && data.ok) {
+        row.classList.add('done'); bar.style.width = '100%';
+        msg.innerHTML = `اترفع ✓ — قول للمساعد: <span class="name">${esc(data.path)}</span>` + (data.renamed ? ' (الاسم اتغير عشان ما يمسحش ملف قديم)' : '');
+      } else { row.classList.add('fail'); msg.textContent = data.error || 'الرفع فشل؛ جرّب تاني.'; }
+      refresh(); resolve();
+    };
+    xhr.onerror = () => { row.classList.add('fail'); msg.textContent = 'الاتصال اتقطع. اتأكد إن نافذة SSH مفتوحة وجرّب تاني.'; resolve(); };
+    xhr.send(file);
+  });
+}
+
+const drop = $('#drop'), pick = $('#pick');
+drop.addEventListener('click', () => pick.click());
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') pick.click(); });
+pick.addEventListener('change', () => { enqueue(pick.files); pick.value = ''; });
+for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
+for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); });
+drop.addEventListener('drop', (e) => enqueue(e.dataTransfer.files));
+window.addEventListener('beforeunload', (e) => { if (document.querySelector('.row:not(.done):not(.fail) .bar')) { e.preventDefault(); e.returnValue = ''; } });
+refresh();
+</script>
+</body>
+</html>
