@@ -135,19 +135,27 @@ async function listMegaFolder({handle, key}, fetchImpl) {
   const info = Array.isArray(answer) ? answer[0] : answer;
   if (typeof info === 'number' || !Array.isArray(info?.f)) throw new HttpError(404, 'الفولدر مش موجود على MEGA أو اللينك ناقص.');
   const folderKey = b64url(key);
-  const nodeKey = (k) => {
-    const part = String(k ?? '').split('/').map((x) => x.split(':')).find(([, v]) => v)?.[1];
-    if (!part) return null;
-    const decipher = createDecipheriv('aes-128-ecb', folderKey, null); decipher.setAutoPadding(false);
-    return Buffer.concat([decipher.update(b64url(part)), decipher.final()]);
+  // A node's "k" holds one copy of its key per holder ("<holder>:<key>/<holder>:<key>"): the owner's account, and the
+  // shared folder. Only the shared folder's copy opens with the link key, so try each and keep the one whose
+  // attributes decrypt to a real name.
+  const open = (part) => {
+    try {
+      const decipher = createDecipheriv('aes-128-ecb', folderKey, null); decipher.setAutoPadding(false);
+      return Buffer.concat([decipher.update(b64url(part)), decipher.final()]);
+    } catch { return null; }
   };
   const files = [];
   for (const node of info.f) {
     if (node.t !== 0) continue;
-    const raw = nodeKey(node.k);
-    if (!raw || raw.length !== 32) continue;
-    const {k} = megaKeysRaw(raw);
-    const name = megaName(node.a, k) ?? `mega-${node.h}`;
+    let found = null;
+    for (const [, part] of String(node.k ?? '').split('/').map((x) => x.split(':'))) {
+      const raw = part && open(part);
+      if (!raw || raw.length !== 32) continue;
+      const name = megaName(node.a, megaKeysRaw(raw).k);
+      if (name) { found = {raw, name}; break; }
+    }
+    if (!found) continue;
+    const {raw, name} = found;
     // The download answer inside a folder carries no attributes, so the name comes from the listing.
     files.push({name, size: Number(node.s) || null, open: async () => ({...await openMega({handle: node.h, key: raw, folder: handle}, fetchImpl), name})});
   }

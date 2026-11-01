@@ -100,7 +100,7 @@ test('a Drive folder brings in every video, photo and sound inside it and its su
   await assert.rejects(importLink(root, 'https://drive.google.com/drive/folders/1NoSuchFolder00', {fetchImpl}), /أي حد معاه اللينك/);
 }));
 
-test('a MEGA folder is listed, each file key opened with the folder key, and every file decrypted', async () => withRoot(async (root) => {
+test('a MEGA folder is listed, each file key opened with the folder copy of its key, and every file decrypted', async () => withRoot(async (root) => {
   const folderKey = randomBytes(16), files = {Nd0001aa: ['clip.mp4', Buffer.from('clip bytes '.repeat(50))], Nd0002bb: ['song.mp3', Buffer.from('song bytes '.repeat(80))], Nd0003cc: ['readme.pdf', Buffer.from('pdf')]};
   const nodes = [{h: 'Fold0000', t: 1, a: 'x', k: ''}];
   const stored = {};
@@ -112,7 +112,8 @@ test('a MEGA folder is listed, each file key opened with the folder key, and eve
     const cbc = createCipheriv('aes-128-cbc', k, Buffer.alloc(16)); cbc.setAutoPadding(false);
     const ctr = createCipheriv('aes-128-ctr', k, iv);
     stored[h] = Buffer.concat([ctr.update(plain), ctr.final()]);
-    nodes.push({h, p: 'Fold0000', t: 0, s: plain.length, a: b64url(Buffer.concat([cbc.update(attrs), cbc.final()])), k: `Fold0000:${b64url(encKey)}`});
+    // As in a real shared folder: the owner's copy of the key comes first and does not open with the link key.
+    nodes.push({h, p: 'Fold0000', t: 0, s: plain.length, a: b64url(Buffer.concat([cbc.update(attrs), cbc.final()])), k: `OwnerUsr:${b64url(randomBytes(32))}/Fold0000:${b64url(encKey)}`});
   }
   const fetchImpl = async (url, options = {}) => {
     if (url.startsWith('https://g.api.mega.co.nz/cs?id=0&n=AbCd1234')) {
