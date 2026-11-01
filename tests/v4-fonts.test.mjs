@@ -15,7 +15,7 @@ import {editManifestSchema} from '../engine/src/prepared-edit/schema.ts';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const read = (relative) => readFile(path.join(ROOT, relative), 'utf8');
 const lock = JSON.parse(await read('versions.lock.json'));
-const V4 = ['Lalezar', 'Aref Ruqaa', 'Aref Ruqaa Ink', 'Reem Kufi', 'Amiri', 'Alexandria', 'Marhey'];
+const V4 = ['Lalezar', 'Aref Ruqaa', 'Aref Ruqaa Ink', 'Reem Kufi', 'Amiri', 'Alexandria', 'Marhey', 'Almarai'];
 
 // The exact Google Fonts requests and the flat file names the download table in LANE-REPORT.md lists.
 const EXPECTED = {
@@ -29,9 +29,11 @@ const EXPECTED = {
     files: ['Amiri-arabic-400.woff2', 'Amiri-arabic-700.woff2', 'Amiri-latin-400.woff2', 'Amiri-latin-700.woff2']},
   Alexandria: {url: 'https://fonts.googleapis.com/css2?family=Alexandria:wght@100..900&display=swap', files: ['Alexandria-arabic-var.woff2', 'Alexandria-latin-var.woff2']},
   Marhey: {url: 'https://fonts.googleapis.com/css2?family=Marhey:wght@300..700&display=swap', files: ['Marhey-arabic-var.woff2', 'Marhey-latin-var.woff2']},
+  Almarai: {url: 'https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&display=swap',
+    files: ['Almarai-arabic-400.woff2', 'Almarai-arabic-700.woff2', 'Almarai-arabic-800.woff2', 'Almarai-latin-400.woff2', 'Almarai-latin-700.woff2', 'Almarai-latin-800.woff2']},
 };
 
-test('the seven new families are declared for the fetch script with the requests the download table lists', () => {
+test('the later families are declared for the fetch script with the requests the download table lists', () => {
   assert.deepEqual([...V4_FONT_FAMILIES], V4);
   for (const family of V4) {
     const spec = DECLARED_FONTS.find((item) => item.family === family);
@@ -46,7 +48,7 @@ test('the seven new families are declared for the fetch script with the requests
   assert.deepEqual(DECLARED_FONTS.find((spec) => spec.family === 'Reem Kufi').axes, {wght: [400, 700]});
   assert.deepEqual(DECLARED_FONTS.find((spec) => spec.family === 'Alexandria').axes, {wght: [100, 900]});
   assert.deepEqual(DECLARED_FONTS.find((spec) => spec.family === 'Marhey').axes, {wght: [300, 700]});
-  for (const family of ['Lalezar', 'Aref Ruqaa', 'Aref Ruqaa Ink', 'Amiri']) assert.equal(DECLARED_FONTS.find((spec) => spec.family === family).axes, undefined, `${family} is static`);
+  for (const family of ['Lalezar', 'Aref Ruqaa', 'Aref Ruqaa Ink', 'Amiri', 'Almarai']) assert.equal(DECLARED_FONTS.find((spec) => spec.family === family).axes, undefined, `${family} is static`);
 });
 
 test('only the new families may be declared without a lock pin, and a pinned one is pinned for every declared face', () => {
@@ -64,7 +66,7 @@ test('only the new families may be declared without a lock pin, and a pinned one
 });
 
 test('the families reach every place a font is chosen', () => {
-  assert.deepEqual(FONT_CHOICES.slice(-7), V4);
+  assert.deepEqual(FONT_CHOICES.slice(-V4.length), V4);
   assert.deepEqual(Object.keys(FONT_LABEL).sort(), [...FONT_CHOICES].sort(), 'every font has an editor label');
   for (const family of V4) {
     assert.ok(PREFERENCE_VALUES.font.includes(family), `${family} is a preference value`);
@@ -76,7 +78,7 @@ test('the families reach every place a font is chosen', () => {
 });
 
 test('the settings page previews each new family from its own files', () => {
-  assert.deepEqual(PREVIEW_FAMILIES.slice(-7).map((family) => family.alias), V4);
+  assert.deepEqual(PREVIEW_FAMILIES.slice(-V4.length).map((family) => family.alias), V4);
   const fake = (family, subset, weight, file) => ({family, file, subset, weight, style: 'normal', bytes: 10, unicodeRange: 'U+0000-00FF', sha256: 'a'.repeat(64), url: `https://fonts.gstatic.com/s/x/${file}`});
   const faces = [];
   for (const [family, {files}] of Object.entries(EXPECTED)) {
@@ -93,6 +95,7 @@ test('the settings page previews each new family from its own files', () => {
   assert.deepEqual(css('Reem Kufi'), ['400 700']);
   assert.deepEqual(css('Alexandria'), ['100 900']);
   assert.deepEqual(css('Marhey'), ['300 700']);
+  assert.deepEqual(css('Almarai'), ['400', '700', '800']);
   for (const family of V4) assert.equal(previewFaces(faces).filter((item) => item.alias === family).every((item) => item.face.family === family), true);
 });
 
@@ -151,8 +154,9 @@ test('core/fonts registers a new family only when its files are installed or its
   assert.deepEqual(byFamily('Reem Kufi'), [['arabic', 'ReemKufi-arabic-var.woff2', '400 700'], ['latin', 'ReemKufi-latin-var.woff2', '400 700']]);
   assert.deepEqual(byFamily('Alexandria').map((face) => face[2]), ['100 900', '100 900']);
   assert.deepEqual(byFamily('Marhey').map((face) => face[2]), ['300 700', '300 700']);
+  assert.deepEqual(byFamily('Almarai').map(([subset, , weight]) => `${subset}/${weight}`).sort(), ['arabic/400', 'arabic/700', 'arabic/800', 'latin/400', 'latin/700', 'latin/800']);
   for (const family of V4) assert.doesNotThrow(() => installed.assertFamilyAvailable(family));
-  assert.equal(installed.REGISTERED.length, 39 + 2 + 4 + 4 + 2 + 4 + 2 + 2);
+  assert.equal(installed.REGISTERED.length, 39 + 2 + 4 + 4 + 2 + 4 + 2 + 2 + 6);
 
   // Once the tracked template pins a family, a missing installed file fails clearly at load, as for every earlier family.
   await assert.rejects(() => loadFonts(earlier, [...earlier, ...v4Entries].map(sixKeys)), /manifest\.json has no Lalezar arabic 400[\s\S]*setup --steps fonts/);

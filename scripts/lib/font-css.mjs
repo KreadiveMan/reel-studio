@@ -23,11 +23,13 @@ export const DECLARED_FONTS = Object.freeze([
   {family: 'Amiri', weights: [400, 700], subsets: ['arabic', 'latin']},
   {family: 'Alexandria', weights: [400], subsets: ['arabic', 'latin'], axes: {wght: [100, 900]}},
   {family: 'Marhey', weights: [400], subsets: ['arabic', 'latin'], axes: {wght: [300, 700]}},
+  // Almarai (OFL, Google Fonts): a clean, friendly Arabic sans in three static weights.
+  {family: 'Almarai', weights: [400, 700, 800], subsets: ['arabic', 'latin']},
 ]);
 
 // The V4 additions. Pins in versions.lock.json come from `node scripts/fetch-fonts.mjs --family "<name>" --lock` after the
 // owner approves the download; until then the tests allow exactly these families to be declared without a pin.
-export const V4_FONT_FAMILIES = Object.freeze(['Lalezar', 'Aref Ruqaa', 'Aref Ruqaa Ink', 'Reem Kufi', 'Amiri', 'Alexandria', 'Marhey']);
+export const V4_FONT_FAMILIES = Object.freeze(['Lalezar', 'Aref Ruqaa', 'Aref Ruqaa Ink', 'Reem Kufi', 'Amiri', 'Alexandria', 'Marhey', 'Almarai']);
 
 export const slug = (family) => family.replace(/[^A-Za-z0-9]+/g, '');
 

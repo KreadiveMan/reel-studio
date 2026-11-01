@@ -78,6 +78,8 @@ export const FAMILY = {
   alexandria: "Alexandria",
 
   marhey: "Marhey",
+
+  almarai: "Almarai",
 } as const;
 
 export type FamilyName = (typeof FAMILY)[keyof typeof FAMILY];
@@ -218,6 +220,9 @@ const V4_FACES: Face[] = (["arabic", "latin"] as const).flatMap<Face>((subset) =
   { family: FAMILY.amiri, source: "Amiri", subset, file: 700, css: "700" },
   { family: FAMILY.alexandria, source: "Alexandria", subset, file: 400, css: "100 900" },
   { family: FAMILY.marhey, source: "Marhey", subset, file: 400, css: "300 700" },
+  { family: FAMILY.almarai, source: "Almarai", subset, file: 400, css: "400" },
+  { family: FAMILY.almarai, source: "Almarai", subset, file: 700, css: "700" },
+  { family: FAMILY.almarai, source: "Almarai", subset, file: 800, css: "800" },
 ]);
 
 const PINNED_SOURCES = new Set((template as { family: string }[]).map((e) => e.family));

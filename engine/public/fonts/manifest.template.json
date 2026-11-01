@@ -16,6 +16,54 @@
     "bytes": 30140
   },
   {
+    "family": "Almarai",
+    "file": "Almarai-arabic-400.woff2",
+    "subset": "arabic",
+    "weight": 400,
+    "style": "normal",
+    "bytes": 31672
+  },
+  {
+    "family": "Almarai",
+    "file": "Almarai-arabic-700.woff2",
+    "subset": "arabic",
+    "weight": 700,
+    "style": "normal",
+    "bytes": 32912
+  },
+  {
+    "family": "Almarai",
+    "file": "Almarai-arabic-800.woff2",
+    "subset": "arabic",
+    "weight": 800,
+    "style": "normal",
+    "bytes": 33328
+  },
+  {
+    "family": "Almarai",
+    "file": "Almarai-latin-400.woff2",
+    "subset": "latin",
+    "weight": 400,
+    "style": "normal",
+    "bytes": 17468
+  },
+  {
+    "family": "Almarai",
+    "file": "Almarai-latin-700.woff2",
+    "subset": "latin",
+    "weight": 700,
+    "style": "normal",
+    "bytes": 17392
+  },
+  {
+    "family": "Almarai",
+    "file": "Almarai-latin-800.woff2",
+    "subset": "latin",
+    "weight": 800,
+    "style": "normal",
+    "bytes": 19280
+  },
+  {
     "family": "Amiri",
     "file": "Amiri-arabic-400.woff2",
     "subset": "arabic",

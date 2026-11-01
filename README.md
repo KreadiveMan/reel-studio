@@ -172,7 +172,7 @@
 | --- | --- |
 | **الستايل** | واحد من ١١ ستايل، أو يختاره المساعد حسب محتوى كل فيديو. |
 | **الكلام على الشاشة** | كلمات قصيرة، جُمل، أو كلمة في المرة؛ مع أشكال مختلفة للكابشن. |
-| **الخط** | Cairo، Tajawal، IBM Plex Sans Arabic، Noto Naskh Arabic، Noto Kufi Arabic، Readex Pro، El Messiri، Grid Sans، Lalezar، Aref Ruqaa، Aref Ruqaa Ink، Reem Kufi، Amiri، Alexandria، أو Marhey. |
+| **الخط** | Cairo، Tajawal، IBM Plex Sans Arabic، Noto Naskh Arabic، Noto Kufi Arabic، Readex Pro، El Messiri، Grid Sans، Lalezar، Aref Ruqaa، Aref Ruqaa Ink، Reem Kufi، Amiri، Alexandria، Marhey، أو Almarai (المراعي). |
 | **الأرقام** | كما وردت في الكلام، أو أرقام لاتينية 123، أو أرقام عربية ١٢٣. |
 | **وصف المنشور** | مختصر، تعليمي، أو حكاية، بلهجة كلامك في الفيديو؛ مستقل عن الكلام اللي بيظهر على الفيديو. |
 | **هويتك** | الاسم والهاندل والمنصات وألوان البراند. |

@@ -132,6 +132,7 @@ export const FAMILY_SOURCES = Object.freeze({
   'Amiri': ['Amiri'],
   'Alexandria': ['Alexandria'],
   'Marhey': ['Marhey'],
+  'Almarai': ['Almarai'],
 });
 
 /** `U+0600-06FF, U+200C, U+4??` as `[[from, to], ...]`. */

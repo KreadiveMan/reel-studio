@@ -16,7 +16,7 @@ Reel Studio's own code is released under the MIT License (see `LICENSE`). The to
 
 ## Fonts
 
-Downloaded from Google Fonts under the SIL Open Font License 1.1: Alexandria, Amiri, Aref Ruqaa, Aref Ruqaa Ink, Cairo, El Messiri, IBM Plex Mono, IBM Plex Sans Arabic, Inter, Lalezar, Marhey, Noto Kufi Arabic, Noto Naskh Arabic, Readex Pro, Reem Kufi, Source Serif 4, Tajawal.
+Downloaded from Google Fonts under the SIL Open Font License 1.1: Alexandria, Almarai, Amiri, Aref Ruqaa, Aref Ruqaa Ink, Cairo, El Messiri, IBM Plex Mono, IBM Plex Sans Arabic, Inter, Lalezar, Marhey, Noto Kufi Arabic, Noto Naskh Arabic, Readex Pro, Reem Kufi, Source Serif 4, Tajawal.
 
 ## Bundled sounds (provenance ledger)
 

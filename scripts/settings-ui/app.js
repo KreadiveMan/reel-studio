@@ -7,7 +7,7 @@ const labels = {
   captionsGrouping: {compact: 'كلمات قصيرة', clauses: 'جُمل هادية', single: 'كلمة في كل مرة'},
   captionsPresentation: {pill: 'كبسولة واضحة', minimal: 'كلام من غير خلفية', 'ink-strip': 'شريط غامق'},
   captionsSkin: {'spoken-box': 'صندوق الكلمة المنطوقة', karaoke: 'كاريوكي', 'bold-outline': 'حدود عريضة', 'soft-shadow': 'ظل ناعم', 'paper-tag': 'قصاصة ورق'},
-  font: {Cairo: 'Cairo', Tajawal: 'Tajawal', 'Noto Naskh Arabic': 'نسخ عربي', 'Plex Display': 'Plex Display', 'Grid Sans': 'Grid Sans', 'Noto Kufi Arabic': 'كوفي', 'Readex Pro': 'Readex', 'El Messiri': 'المسيري', Lalezar: 'لالزار', 'Aref Ruqaa': 'عارف رقعة', 'Aref Ruqaa Ink': 'عارف رقعة حبر', 'Reem Kufi': 'ريم كوفي', Amiri: 'أميري', Alexandria: 'الإسكندرية', Marhey: 'مرحي'},
+  font: {Cairo: 'Cairo', Tajawal: 'Tajawal', 'Noto Naskh Arabic': 'نسخ عربي', 'Plex Display': 'Plex Display', 'Grid Sans': 'Grid Sans', 'Noto Kufi Arabic': 'كوفي', 'Readex Pro': 'Readex', 'El Messiri': 'المسيري', Lalezar: 'لالزار', 'Aref Ruqaa': 'عارف رقعة', 'Aref Ruqaa Ink': 'عارف رقعة حبر', 'Reem Kufi': 'ريم كوفي', Amiri: 'أميري', Alexandria: 'الإسكندرية', Marhey: 'مرحي', Almarai: 'المراعي'},
   writingStyle: {short: 'مختصر ومباشر', educational: 'شرح ونقط عملية', storytelling: 'حكاية قصيرة'},
 };
 const sampleWriting = {

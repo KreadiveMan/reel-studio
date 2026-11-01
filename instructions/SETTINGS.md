@@ -16,7 +16,7 @@ Each preference independently uses `{"mode":"auto","value":null}` or `{"mode":"f
 | `captionsGrouping` | `compact`, `clauses`, `single` |
 | `captionsPresentation` | `pill`, `minimal`, `ink-strip` |
 | `captionsSkin` | Optional: `spoken-box`, `karaoke`, `bold-outline`, `soft-shadow`, `paper-tag`. Missing or `auto` uses the basic presentation. A fixed skin overrides its drawing. |
-| `font` | `Cairo`, `Tajawal`, `Noto Naskh Arabic`, `Plex Display`, `Grid Sans`, `Noto Kufi Arabic`, `Readex Pro`, `El Messiri`, `Lalezar`, `Aref Ruqaa`, `Aref Ruqaa Ink`, `Reem Kufi`, `Amiri`, `Alexandria`, `Marhey` |
+| `font` | `Cairo`, `Tajawal`, `Noto Naskh Arabic`, `Plex Display`, `Grid Sans`, `Noto Kufi Arabic`, `Readex Pro`, `El Messiri`, `Lalezar`, `Aref Ruqaa`, `Aref Ruqaa Ink`, `Reem Kufi`, `Amiri`, `Alexandria`, `Marhey`, `Almarai` |
 | `writingStyle` | `short`, `educational`, `storytelling` |
 | `digits` | `latin` (1 2 3), `arabic-indic` (١ ٢ ٣). Optional: `auto` or no entry keeps every number as written. |
 | `palette` | `brand` (colours on supported styles). With `auto` each style keeps its own colours and the profile's brand colours are not used; set `fixed` `brand` for them to apply. |

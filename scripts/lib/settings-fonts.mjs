@@ -23,6 +23,7 @@ export const PREVIEW_FAMILIES = Object.freeze([
   {alias: 'Amiri', parts: [{source: 'Amiri', weights: [400, 700]}]},
   {alias: 'Alexandria', parts: [{source: 'Alexandria', weights: [400], css: '100 900'}]},
   {alias: 'Marhey', parts: [{source: 'Marhey', weights: [400], css: '300 700'}]},
+  {alias: 'Almarai', parts: [{source: 'Almarai', weights: [400, 700, 800]}]},
 ]);
 
 /** `{alias, face, css}` for every lock font a preview family needs; `css` is its font-weight. */

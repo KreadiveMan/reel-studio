@@ -54,6 +54,7 @@ export const FONT_LABEL: Readonly<Record<PreferredFont, string>> = {
   Amiri: "Amiri · أميري",
   Alexandria: "Alexandria · الإسكندرية",
   Marhey: "Marhey · مرحي",
+  Almarai: "Almarai · المراعي",
 };
 export const fontLabel = (font: string): string => (FONT_LABEL as Readonly<Record<string, string>>)[font] ?? font;
 
