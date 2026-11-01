@@ -22,6 +22,10 @@ node scripts/intake.mjs --source Raw/<file> --id <slug>
 
 It measures the real motion rate and, when needed, writes a constant-rate BT.709 SDR copy to `Projects/<slug>/source/` (iPhone HDR/HLG, variable-rate recordings, 60-tagged footage that really moves at 30, anything under 30 fps). From now on the record's `edit` path is the source. The edit, its graphics and the delivery all run at `deliveryFps`; the recording's own motion is `plateFps`, with every frame shown `repeat` times.
 
+### Several recordings for one reel
+
+When the creator names two or more recordings for one reel (parts in order, or takes of the same lines), join them first: `node scripts/join-recordings.mjs --id <slug> --sources Raw/a.mov,Raw/b.mov` (their order is the order given). Same camera and settings are joined without re-encoding; otherwise once to the first recording's picture. Then intake `Projects/<slug>/source/joined.<ext>` as the recording. `Projects/<slug>/source/join.json` gives where each recording starts: keep parts in order; for takes, choose the strongest delivery of each line in the cut proposal and say which take each kept passage comes from.
+
 ### Named B-roll clips
 
 When the creator names clip files to show while they speak, bring each one in once and use it by its clip record. The creator names the files; never search folders for footage.

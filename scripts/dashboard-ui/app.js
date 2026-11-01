@@ -2,7 +2,7 @@
 // Reel Studio dashboard client: projects, uploads, the chat with Claude, approvals and stage progress.
 const $ = (sel, root = document) => root.querySelector(sel);
 const H = {'x-dashboard': '1', 'content-type': 'application/json'};
-const state = {stages: [], styles: [], projects: new Map(), raw: [], current: null, project: null, drafts: new Map(), tabs: new Map(), details: null, remote: null};
+const state = {stages: [], styles: [], projects: new Map(), raw: [], current: null, project: null, drafts: new Map(), tabs: new Map(), details: null, remote: null, pickOrder: []};
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const size = (b) => b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(2) + ' GB' : b >= 1024 ** 2 ? (b / 1024 ** 2).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
 const clock = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0'); };
@@ -82,7 +82,17 @@ function renderHome() {
     $('.notes-label', form).innerHTML = graphics ? 'فكرة الموشن' : 'ملاحظاتك <span class="opt">اختياري</span>';
     renderPicks();
   };
-  form.addEventListener('change', (e) => { if (e.target.name === 'kind') syncKind(); else if (e.target.name === 'pick') pickNote(); else if (e.target.name === 'mpick') montageNote(); });
+  form.addEventListener('change', (e) => {
+    if (e.target.name === 'kind') syncKind();
+    else if (e.target.name === 'pick') {
+      // The order videos are ticked in is the order they join in.
+      state.pickOrder = state.pickOrder.filter((v) => v !== e.target.value);
+      if (e.target.checked) state.pickOrder.push(e.target.value);
+      if (form.kind.value === 'podcast') state.pickOrder = [e.target.value];
+      pickNote();
+    } else if (e.target.name === 'mpick') montageNote();
+    else if (e.target.name === 'join') pickNote();
+  });
   syncKind();
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -90,8 +100,10 @@ function renderHome() {
     button.disabled = true; error.textContent = '';
     try {
       const montage = form.kind.value === 'montage';
-      const rawFiles = [...form.querySelectorAll(montage ? 'input[name=mpick]:checked' : 'input[name=pick]:checked')].map((x) => x.value);
+      const checked = [...form.querySelectorAll(montage ? 'input[name=mpick]:checked' : 'input[name=pick]:checked')].map((x) => x.value);
+      const rawFiles = montage ? checked : [...state.pickOrder.filter((v) => checked.includes(v)), ...checked.filter((v) => !state.pickOrder.includes(v))];
       const body = {kind: form.kind.value, rawFiles, clips: form.clips.value || null, style: montage ? '' : form.style.value, title: form.title.value, notes: form.notes.value};
+      if (form.kind.value === 'recording' && rawFiles.length > 1) body.join = form.join.value;
       if (montage) Object.assign(body, {music: form.music.value, duration: form.duration.value, pace: form.pace.value});
       const data = await api('/api/projects', {method: 'POST', body: JSON.stringify(body)});
       for (const p of data.projects ?? [data.project]) state.projects.set(p.id, p);
@@ -118,7 +130,7 @@ function renderPicks() {
   const videos = state.raw.filter((f) => /\.(mp4|mov|m4v|mkv|webm|avi|mts|mp3|wav|m4a|aac|flac|ogg)$/i.test(f.name));
   box.innerHTML = videos.length ? videos.map((f, i) => {
     const value = `Raw/${f.name}`, checked = kept.size ? kept.has(value) : i === 0;
-    return `<label><input type="${podcast ? 'radio' : 'checkbox'}" name="pick" value="${esc(value)}" ${checked ? 'checked' : ''}> <span class="name">${esc(f.name)}</span> <span class="size">${size(f.bytes)}</span></label>`;
+    return `<label><input type="${podcast ? 'radio' : 'checkbox'}" name="pick" value="${esc(value)}" ${checked ? 'checked' : ''}> <span class="order" data-for="${esc(value)}"></span><span class="name">${esc(f.name)}</span> <span class="size">${size(f.bytes)}</span></label>`;
   }).join('') : '<span class="dim">ارفع فيديو الأول من فوق.</span>';
   pickNote();
   // The montage picks: one music file, and any number of videos and photos.
@@ -142,8 +154,13 @@ function montageNote() {
 }
 function pickNote() {
   const form = $('.new-form'); if (!form) return;
-  const n = form.querySelectorAll('input[name=pick]:checked').length;
-  $('.pick-note', form).textContent = n > 1 ? `هيتعمل ${n} مشاريع، مشروع لكل فيديو، وهيشتغلوا ورا بعض في الطابور.` : '';
+  const checked = [...form.querySelectorAll('input[name=pick]:checked')].map((x) => x.value);
+  state.pickOrder = [...state.pickOrder.filter((v) => checked.includes(v)), ...checked.filter((v) => !state.pickOrder.includes(v))];
+  const n = checked.length, several = n > 1 && form.kind.value === 'recording';
+  for (const badge of form.querySelectorAll('.order')) { const i = state.pickOrder.indexOf(badge.dataset.for); badge.textContent = several && i >= 0 ? String(i + 1) : ''; }
+  $('.joinbox', form).hidden = !several;
+  const mode = form.join?.value ?? 'separate';
+  $('.rec .pick-note', form).textContent = !several ? '' : mode === 'separate' ? `هيتعمل ${n} مشاريع، مشروع لكل فيديو، وهيشتغلوا ورا بعض في الطابور.` : `ريل واحد من ${n} فيديوهات بالترتيب ده: ${state.pickOrder.map((v, i) => `${i + 1}) ${v.slice(4)}`).join('  ')}`;
 }
 
 // A download from a Drive or MEGA link, shown like an upload row and updated by 'import' events.
@@ -214,7 +231,7 @@ async function openProject(id) {
   state.project = data.project;
   main.replaceChildren($('#tpl-project').content.cloneNode(true));
   $('.ptitle').textContent = data.project.title;
-  const where = data.project.kind === 'graphics' ? 'موشن من فكرة' : data.project.kind === 'montage' ? `مونتاج على ${data.project.rawFile} · ${data.project.media?.length ?? 0} ملف` : data.project.rawFile;
+  const where = data.project.kind === 'graphics' ? 'موشن من فكرة' : data.project.kind === 'montage' ? `مونتاج على ${data.project.rawFile} · ${data.project.media?.length ?? 0} ملف` : data.project.media?.length > 1 ? `${data.project.media.length} فيديوهات في ريل واحد (${data.project.join === 'takes' ? 'تيكات' : 'أجزاء'})` : data.project.rawFile;
   $('.meta').textContent = `${where} · بدأ ${new Date(data.project.createdAt).toLocaleString('ar-EG')}`;
   const log = $('.log');
   for (const item of data.project.items) placeItem(log, itemNode(item));

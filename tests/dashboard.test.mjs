@@ -341,3 +341,19 @@ test('a Drive link downloads into Raw in the background with live progress, and 
     assert.deepEqual((await call(app, {pathname: '/api/raw'})).json.files.map((f) => f.name), ['trip.mp4']);
   } finally { stream.close(); await app.close(); rmSync(root, {recursive: true, force: true}); }
 });
+
+test('several videos as one reel make one project that joins them in the ticked order first', async () => withDashboard(async (app, root) => {
+  mkdirSync(path.join(root, 'Raw'));
+  for (const name of ['IMG_3103.MOV', 'IMG_3104.MOV']) writeFileSync(path.join(root, 'Raw', name), 'x');
+  const made = await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'recording', rawFiles: ['Raw/IMG_3104.MOV', 'Raw/IMG_3103.MOV'], join: 'takes'}});
+  assert.equal(made.status, 200, made.text);
+  assert.equal(made.json.projects.length, 1, 'one project, not one per video');
+  const project = app.store.get(made.json.project.id);
+  assert.deepEqual([project.media, project.join, project.rawFile], [['Raw/IMG_3104.MOV', 'Raw/IMG_3103.MOV'], 'takes', 'Raw/IMG_3104.MOV']);
+  const message = project.items[0].text;
+  assert.match(message, /1\) Raw\/IMG_3104\.MOV\n2\) Raw\/IMG_3103\.MOV/);
+  assert.match(message, /join-recordings\.mjs --id <اسم المشروع> --sources Raw\/IMG_3104\.MOV,Raw\/IMG_3103\.MOV/);
+  assert.match(message, /أحسن أداء لكل جملة/);
+  const separate = await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'recording', rawFiles: ['Raw/IMG_3103.MOV', 'Raw/IMG_3104.MOV'], join: 'separate'}});
+  assert.equal(separate.json.projects.length, 2, 'separate still makes one project per video');
+}));

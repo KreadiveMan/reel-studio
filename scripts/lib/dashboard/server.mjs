@@ -82,6 +82,16 @@ export function firstMessage(project, styleLabel) {
       `المدة: ${project.duration === 'full' ? 'طول الموسيقى' : `${project.duration} ثانية`}. السرعة: ${pace}.`,
       'شيل صوت الفيديوهات، وخلّي القطعات على الضربات بساوند ديزاين.', ...(project.notes?.trim() ? [`ملاحظاتي: ${project.notes.trim()}`] : [])].join('\n');
   }
+  if (project.kind === 'recording' && project.media?.length > 1) {
+    // Several recordings for one reel: joined first (scripts/join-recordings.mjs), then edited as one recording.
+    const list = project.media.map((f, i) => `${i + 1}) ${f}`).join('\n');
+    const how = project.join === 'takes'
+      ? 'دول تيكات لنفس الكلام: في القص اختار أحسن أداء لكل جملة، واشيل التكرار والتيكات الأضعف.'
+      : 'دول أجزاء ورا بعض بالترتيب ده: خلّي الترتيب زي ما هو واقطع السكتات والغلطات عادي.';
+    return [`عدّل الفيديوهات دي كريل واحد${style}:`, list, how,
+      `الأول اجمعهم في مصدر واحد: node scripts/join-recordings.mjs --id <اسم المشروع> --sources ${project.media.join(',')}`,
+      'وبعدين كمّل على الملف اللي هيطلع (Projects/<اسم المشروع>/source/joined…) زي أي تسجيل، وjoin.json فيه بداية كل فيديو.'].join('\n') + notes;
+  }
   if (project.kind === 'podcast') return `طلّع ${project.clips ? `${project.clips} كليبات` : 'كليبات'} من الحلقة ${project.rawFile}${style}.${notes}`;
   return `عدّل الفيديو ${project.rawFile}${style}.${notes}`;
 }
@@ -307,6 +317,18 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
         if (kind === 'podcast' && rawFiles.length > 1) throw new HttpError(400, 'اختار حلقة واحدة للبودكاست.');
         if (rawFiles.length > 20) throw new HttpError(400, 'أقصى عدد 20 فيديو في المرة.');
       } else if (!notes.trim()) throw new HttpError(400, 'اكتب فكرة الموشن.');
+      // Several recordings as one reel: one project, in the order they were ticked.
+      if (kind === 'recording' && rawFiles.length > 1 && ['parts', 'takes'].includes(body.join)) {
+        const named = String(body.title ?? '').trim().slice(0, 80);
+        const project = store.create({kind, title: named || `${rawFiles[0].slice(4)} + ${rawFiles.length - 1}`, rawFile: rawFiles[0], style: style?.id ?? null, notes});
+        Object.assign(project, {media: rawFiles, join: body.join});
+        recordStages(project, await detectStages(root, project));
+        const busy = [...sessions.values()].some((session) => session.running);
+        if (busy) project.queued = {message: firstMessage(project, style?.label), at: new Date().toISOString()};
+        store.touch(project); changed(project);
+        if (!busy) say(project, firstMessage(project, style?.label));
+        return send(res, 200, {ok: true, project: full(project), projects: [summary(project)]});
+      }
       const clips = kind === 'podcast' && Number.isInteger(Number(body.clips)) && Number(body.clips) >= 1 && Number(body.clips) <= 10 ? Number(body.clips) : null;
       const created = [];
       for (const rawFile of rawFiles) {

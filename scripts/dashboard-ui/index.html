@@ -59,6 +59,14 @@
         </div>
       </div>
       <div class="field rec"><span class="rec-label">الفيديو</span><div class="picks"></div><span class="pick-note"></span></div>
+      <div class="field joinbox" hidden>
+        <span>الفيديوهات دي</span>
+        <div class="choices">
+          <label class="choice-row"><input type="radio" name="join" value="separate" checked><span><b>كل فيديو ريل لوحده</b><small>مشروع لكل فيديو، ورا بعض في الطابور</small></span></label>
+          <label class="choice-row"><input type="radio" name="join" value="parts"><span><b>ريل واحد: أجزاء ورا بعض</b><small>بتتلزق بالترتيب اللي فوق (الأرقام)، وClaude يعمل مونتاج واحد</small></span></label>
+          <label class="choice-row"><input type="radio" name="join" value="takes"><span><b>ريل واحد: تيكات لنفس الكلام</b><small>Claude يختار أحسن أداء لكل جملة ويشيل التكرار</small></span></label>
+        </div>
+      </div>
       <label class="field pod"><span>عدد الكليبات <span class="opt">اختياري</span></span><input name="clips" type="number" min="1" max="10" placeholder="Claude يقترح من 3 لـ 5"></label>
       <div class="row2">
         <label class="field style-field"><span>الستايل</span><select name="style"><option value="">تلقائي — Claude يختار</option></select></label>

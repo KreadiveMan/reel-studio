@@ -92,6 +92,13 @@ nav#projects .s { display:flex; gap:7px; align-items:center; font-size:12px; col
 .picks input { accent-color:var(--accent); width:16px; height:16px; }
 .picks > .dim { padding:14px; }
 .pick-note { color:var(--accent-ink); font-size:13px; font-weight:400; }
+.order { min-width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; display:inline-grid; place-items:center; }
+.order:empty { background:transparent; }
+.choices { display:flex; flex-direction:column; gap:8px; font-weight:400; }
+.choice-row { display:flex; gap:12px; align-items:flex-start; border:1px solid var(--line2); border-radius:12px; padding:12px 14px; cursor:pointer; }
+.choice-row:has(input:checked) { border-color:var(--accent); background:var(--accent-soft); }
+.choice-row input { accent-color:var(--accent); margin-top:5px; }
+.choice-row b { display:block; font-weight:600; } .choice-row small { color:var(--dim); font-size:13px; }
 .rawlist .row { border:0; border-bottom:1px solid var(--line); border-radius:0; margin:0; padding:12px 2px; }
 .rawlist .row:last-child { border-bottom:0; }
 .rawdel { background:none; border:0; color:var(--faint); cursor:pointer; font-size:13px; margin-right:12px; } .rawdel:hover { color:var(--bad); }
