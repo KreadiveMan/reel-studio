@@ -4,56 +4,62 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>لوحة Reel Studio</title>
+<link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <header class="top">
   <button id="menu" class="icon" aria-label="المشاريع">☰</button>
-  <h1>لوحة Reel Studio</h1>
+  <a class="brand" href="#"><span class="mark">▶</span><span><b>Reel Studio</b><small>لوحة المونتاج</small></span></a>
   <span id="conn" class="conn">بيتصل…</span>
 </header>
 <div class="layout">
   <aside id="side">
-    <button id="new" class="primary wide">+ مشروع جديد</button>
-    <button id="files" class="ghost wide">الملفات المرفوعة</button>
+    <button id="new" class="primary wide">＋ مشروع جديد</button>
+    <button id="files" class="side-link">ملفاتك المرفوعة</button>
     <h2>المشاريع</h2>
     <nav id="projects"><p class="dim">لسه مفيش مشاريع.</p></nav>
     <div class="side-foot">
-      <button id="settings" class="ghost wide">إعداداتي (الاسم، الألوان، الستايل)</button>
-      <div id="disk" class="dim"></div>
-      <button id="logout" class="ghost wide" hidden>خروج</button>
+      <button id="settings" class="side-link">إعداداتي <small>الاسم والألوان والستايل</small></button>
+      <div id="disk"></div>
+      <button id="logout" class="side-link" hidden>خروج</button>
     </div>
   </aside>
   <main id="main"></main>
 </div>
 
 <template id="tpl-home">
-  <section class="panel">
-    <h2>ارفع الفيديوهات</h2>
-    <p class="dim">الملفات بتتحط في فولدر <b>Raw</b> على السيرفر. ولو فيه ملف بنفس الاسم، القديم بيفضل زي ما هو والجديد بياخد رقم في آخر اسمه.</p>
-    <div class="drop" tabindex="0"><strong>اسحب الفيديوهات هنا</strong><span class="dim">أو اضغط واختار من جهازك</span>
+  <div class="hello">
+    <h1>أهلًا 👋</h1>
+    <p>ارفع الفيديو، وقول عايز إيه، وClaude يعمل الباقي. وانت متابع كل خطوة من هنا.</p>
+  </div>
+  <section class="panel step">
+    <div class="step-head"><span class="num">١</span><div><h2>ارفع الفيديو</h2><p class="dim">الملف بيتحفظ في فولدر Raw على السيرفر، ومفيش ملف قديم بيتمسح.</p></div></div>
+    <div class="drop" tabindex="0"><span class="drop-icon">⬆</span><strong>اسحب الفيديوهات هنا</strong><span class="dim">أو اضغط واختار من جهازك</span>
       <input type="file" multiple hidden accept="video/*,audio/*,image/*"></div>
     <div class="queue"></div>
   </section>
-  <section class="panel">
-    <h2>مشروع جديد</h2>
+  <section class="panel step">
+    <div class="step-head"><span class="num">٢</span><div><h2>ابدأ مشروع</h2><p class="dim">اختار نوع الشغل، وClaude هيسألك لو محتاج حاجة.</p></div></div>
     <form class="new-form">
-      <div class="seg">
-        <label><input type="radio" name="kind" value="recording" checked> فيديو متسجّل</label>
-        <label><input type="radio" name="kind" value="graphics"> موشن من فكرة (من غير تسجيل)</label>
-        <label><input type="radio" name="kind" value="podcast"> بودكاست (حلقة طويلة ← كليبات)</label>
+      <div class="kinds">
+        <label class="kind"><input type="radio" name="kind" value="recording" checked><span class="k-icon">🎥</span><b>فيديو متسجّل</b><small>ريل من كلامك قدام الكاميرا</small></label>
+        <label class="kind"><input type="radio" name="kind" value="graphics"><span class="k-icon">✨</span><b>موشن من فكرة</b><small>من غير تسجيل، من فكرة مكتوبة</small></label>
+        <label class="kind"><input type="radio" name="kind" value="podcast"><span class="k-icon">🎙️</span><b>بودكاست</b><small>حلقة طويلة تتقطع كليبات</small></label>
       </div>
-      <div class="field rec"><span class="rec-label">الفيديو</span><div class="picks"></div><span class="pick-note dim"></span></div>
-      <label class="field pod">عدد الكليبات (اختياري)<input name="clips" type="number" min="1" max="10" placeholder="Claude يقترح من 3 لـ 5"></label>
-      <label class="field">الستايل<select name="style"><option value="">تلقائي — Claude يختار</option></select></label>
-      <label class="field">اسم المشروع (اختياري)<input name="title" maxlength="80" placeholder="مثلًا: ريل عن العرض الجديد"></label>
-      <label class="field"><span class="notes-label">ملاحظاتك (اختياري)</span><textarea name="notes" rows="3" maxlength="4000" placeholder="أي حاجة عايزها: الطول، الجمهور، حاجة تتشال…"></textarea></label>
+      <div class="field rec"><span class="rec-label">الفيديو</span><div class="picks"></div><span class="pick-note"></span></div>
+      <label class="field pod"><span>عدد الكليبات <span class="opt">اختياري</span></span><input name="clips" type="number" min="1" max="10" placeholder="Claude يقترح من 3 لـ 5"></label>
+      <div class="row2">
+        <label class="field"><span>الستايل</span><select name="style"><option value="">تلقائي — Claude يختار</option></select></label>
+        <label class="field"><span>اسم المشروع <span class="opt">اختياري</span></span><input name="title" maxlength="80" placeholder="مثلًا: ريل العرض الجديد"></label>
+      </div>
+      <label class="field"><span class="notes-label">ملاحظاتك</span><textarea name="notes" rows="3" maxlength="4000" placeholder="أي حاجة عايزها: الطول، الجمهور، حاجة تتشال…"></textarea></label>
       <p class="form-error"></p>
-      <button class="primary" type="submit">ابدأ المونتاج</button>
+      <button class="primary big" type="submit">ابدأ المونتاج</button>
     </form>
   </section>
   <section class="panel">
-    <h2>الموجود في Raw</h2>
+    <h2>ملفاتك المرفوعة</h2>
     <div class="rawlist"><p class="dim">بحمّل…</p></div>
   </section>
 </template>
@@ -62,13 +68,13 @@
   <section class="head panel">
     <div class="title-row"><h2 class="ptitle"></h2><span class="badge"></span></div>
     <div class="meta dim"></div>
-    <div class="queued-box" hidden>⏳ المشروع ده في الطابور: هيبدأ لوحده لما Claude يخلص المشروع اللي شغال. <button class="primary start-now">ابدأ دلوقتي</button></div>
+    <div class="queued-box" hidden><span>⏳ المشروع ده في الطابور، وهيبدأ لوحده أول ما Claude يخلص اللي قبله.</span><button class="ghost start-now">ابدأ دلوقتي</button></div>
     <ol class="stages"></ol>
     <div class="bar"><i></i></div>
     <div class="activity"></div>
     <div class="render" hidden><div class="render-line"></div><div class="bar"><i></i></div></div>
     <div class="links"></div>
-    <div class="head-foot"><span class="psize dim"></span><button class="danger del">مسح المشروع</button></div>
+    <div class="head-foot"><span class="psize"></span><button class="textbtn del">مسح المشروع</button></div>
   </section>
   <dialog class="del-dialog">
     <form method="dialog">

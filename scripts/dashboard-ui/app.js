@@ -58,7 +58,7 @@ function renderHome() {
     $('.rec', form).hidden = graphics;
     $('.pod', form).hidden = kind !== 'podcast';
     $('.rec-label', form).textContent = kind === 'podcast' ? 'الحلقة' : 'الفيديو (ممكن تختار أكتر من واحد)';
-    $('.notes-label', form).textContent = graphics ? 'فكرة الموشن (مطلوبة)' : 'ملاحظاتك (اختياري)';
+    $('.notes-label', form).innerHTML = graphics ? 'فكرة الموشن' : 'ملاحظاتك <span class="opt">اختياري</span>';
     renderPicks();
   };
   form.addEventListener('change', (e) => { if (e.target.name === 'kind') syncKind(); else if (e.target.name === 'pick') pickNote(); });
@@ -150,7 +150,7 @@ async function openProject(id) {
   const where = data.project.kind === 'graphics' ? 'موشن من فكرة' : data.project.rawFile;
   $('.meta').textContent = `${where} · بدأ ${new Date(data.project.createdAt).toLocaleString('ar-EG')}`;
   const log = $('.log');
-  for (const item of data.project.items) log.append(itemNode(item));
+  for (const item of data.project.items) placeItem(log, itemNode(item));
   if (!data.project.items.length) log.innerHTML = '<p class="empty">لسه مفيش رسايل.</p>';
   for (const entry of data.project.pending) addApproval(entry);
   renderHead(); renderLinks();
@@ -281,7 +281,7 @@ function outputHtml(d) {
   const cover = d.outputs.find((f) => /\.(jpe?g|png)$/i.test(f.name));
   let html = '';
   if (video) html += `<div class="vid"><video controls preload="metadata" playsinline ${cover ? `poster="${media(cover.path)}"` : ''} src="${media(video.path)}"></video><div><h3>الفيديو النهائي</h3><p class="dim"><span class="name">${esc(video.path)}</span></p>${qcHtml(video.qc)}</div></div>`;
-  if (d.outputs.length) html += `<div class="downloads">${d.outputs.map((f) => `<a href="${media(f.path, true)}">${/\.srt$/i.test(f.name) ? 'الكابشن SRT' : /\.(jpe?g|png)$/i.test(f.name) ? 'صورة الغلاف' : 'الفيديو'} ⬇ <span class="dim">${size(f.bytes)}</span></a>`).join('')}</div>`;
+  if (d.outputs.length) html += `<div class="downloads">${d.outputs.map((f) => `<a href="${media(f.path, true)}">${/\.srt$/i.test(f.name) ? 'الكابشن SRT' : /\.(jpe?g|png)$/i.test(f.name) ? 'صورة الغلاف' : 'الفيديو'} ⬇ <span class="size">${size(f.bytes)}</span></a>`).join('')}</div>`;
   if (d.publish?.length) html += `<div class="sec"><h3>وصف البوست</h3>${d.publish.map((p, i) => `<div class="copybox"><div class="hd"><b>${esc(PLATFORMS[p.platform] ?? p.platform)}</b><button class="ghost" data-copy="${i}">انسخ</button></div><pre dir="auto">${esc(p.text)}</pre>${p.pinnedComment ? `<p class="dim">تعليق مثبّت: ${esc(p.pinnedComment)}</p>` : ''}${p.altText ? `<p class="dim">النص البديل: ${esc(p.altText)}</p>` : ''}</div>`).join('')}</div>`;
   else if (video) html += `<div class="cta-row"><button class="ghost" data-say="اكتبلي وصف البوست للفيديو النهائي.">اطلب وصف البوست</button></div>`;
   if (d.qcReport) html += `<div class="sec md"><h3>تقرير الجودة</h3>${markdown(d.qcReport)}</div>`;
@@ -342,12 +342,34 @@ function itemNode(item) {
   }
   return node;
 }
+// Claude's working steps (tool calls and approve/deny notes) fold into one quiet line between messages.
+const isStep = (node) => node.dataset.role === 'tool' || node.dataset.role === 'decision';
+function placeItem(log, node) {
+  if (!isStep(node)) { log.append(node); return; }
+  let group = log.lastElementChild;
+  if (!group?.classList.contains('steps')) {
+    group = document.createElement('details');
+    group.className = 'steps';
+    group.innerHTML = '<summary></summary><div class="steps-list"></div>';
+    log.append(group);
+  }
+  group.querySelector('.steps-list').append(node);
+  summarizeSteps(group);
+}
+function summarizeSteps(group) {
+  const steps = [...group.querySelectorAll('.tool')];
+  const running = steps.find((n) => n.classList.contains('running'));
+  const last = running ?? steps.at(-1);
+  const failed = steps.filter((n) => n.classList.contains('error')).length;
+  group.querySelector('summary').innerHTML = `<span class="steps-count">${running ? '<span class="spin"></span>' : '⚙'} Claude عمل ${steps.length} ${steps.length === 1 ? 'خطوة' : 'خطوات'}${failed ? ` <span class="steps-fail">· ${failed} ما نفعتش</span>` : ''}</span>${last ? `<span class="steps-last">${esc(last.querySelector('.txt')?.textContent ?? '')}</span>` : ''}`;
+}
 function upsertItem(item) {
   const log = $('.log'); if (!log) return;
   $('.empty', log)?.remove();
   const old = log.querySelector(`[data-id="${CSS.escape(item.id)}"][data-role="${item.role}"]`);
   const node = itemNode(item);
-  if (old) old.replaceWith(node); else log.append(node);
+  if (old) { old.replaceWith(node); const group = node.closest('.steps'); if (group) summarizeSteps(group); }
+  else placeItem(log, node);
   scrollLog();
 }
 function delta(itemId, text) {
@@ -484,7 +506,7 @@ function connect() {
 async function refreshState() {
   const data = await api('/api/state');
   Object.assign(state, {stages: data.stages, styles: data.styles, raw: data.raw});
-  $('#disk').innerHTML = data.disk ? `المساحة الفاضية على السيرفر: <span class="size">${size(data.disk.free)}</span> من <span class="size">${size(data.disk.total)}</span>` : '';
+  $('#disk').innerHTML = data.disk ? `فاضي <span class="size">${size(data.disk.free)}</span> من <span class="size">${size(data.disk.total)}</span><div class="meter"><i style="width:${Math.round((1 - data.disk.free / data.disk.total) * 100)}%"></i></div>` : '';
   $('#logout').hidden = !data.password;
   state.projects = new Map(data.projects.map((p) => [p.id, p]));
   renderSide();

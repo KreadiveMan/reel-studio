@@ -39,6 +39,18 @@ async function activeRenders(root, dir = RENDER_PROGRESS_DIR) {
   return bySlug;
 }
 
+// The dashboard's own typeface: IBM Plex Sans Arabic (and Plex Mono for file names), served from the fonts the
+// studio already installed in engine/public/fonts. Only these families are exposed.
+const FONT_DIR = fileURLToPath(new URL('../../../engine/public/fonts/', import.meta.url));
+const UI_FONTS = ['IBM Plex Sans Arabic', 'IBM Plex Mono'];
+async function uiFonts() {
+  const manifest = await fs.readFile(path.join(FONT_DIR, 'manifest.json'), 'utf8').then(JSON.parse).catch(() => []);
+  return manifest.filter((f) => UI_FONTS.includes(f.family) && ['arabic', 'latin'].includes(f.subset));
+}
+async function fontCss() {
+  return (await uiFonts()).map((f) => `@font-face{font-family:'${f.family}';font-style:${f.style};font-weight:${f.weight};font-display:swap;src:url('/fonts/${f.file}') format('woff2');unicode-range:${f.unicodeRange};}`).join('\n');
+}
+
 const cookieToken = (header = '') => header.split(';').map((p) => p.trim().split('=')).find(([k]) => k === COOKIE)?.[1];
 
 async function bodyJson(req, limit = 64 * 1024) {
@@ -184,6 +196,13 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
       if (!media) throw new HttpError(404, 'الملف مش موجود.');
       return sendMedia(req, res, media, {download: url.searchParams.get('download') === '1'});
     }
+    if (url.pathname === '/fonts.css' && req.method === 'GET') return send(res, 200, await fontCss(), 'text/css; charset=utf-8');
+    if (api === 'fonts' && req.method === 'GET') {
+      const face = (await uiFonts()).find((f) => `/fonts/${f.file}` === url.pathname);
+      const bytes = face && await fs.readFile(path.join(FONT_DIR, face.file)).catch(() => null);
+      if (!bytes) throw new HttpError(404, 'الخط مش موجود.');
+      res.writeHead(200, {'content-type': 'font/woff2', 'cache-control': 'max-age=86400'}); return res.end(bytes);
+    }
     if (api !== 'api') {
       const file = STATIC[url.pathname];
       if (!file || req.method !== 'GET') throw new HttpError(404, 'الصفحة مش موجودة.');
@@ -311,7 +330,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
       }
       if (!sameToken(cookieToken(req.headers.cookie) ?? req.headers['x-dashboard-token'], token)) throw new HttpError(401, 'افتح الرابط الكامل اللي طبعه أمر اللوحة (فيه token).');
       // Optional password: a second lock on top of the link, for a server other people can reach.
-      if (gate.enabled) {
+      if (gate.enabled && !(req.method === 'GET' && (url.pathname === '/fonts.css' || url.pathname.startsWith('/fonts/')))) {
         if (url.pathname === '/api/login' && req.method === 'POST') {
           const result = await gate.login(String((await bodyJson(req)).password ?? ''), req.socket.remoteAddress);
           res.writeHead(200, {'content-type': 'application/json; charset=utf-8', 'set-cookie': `${gate.cookie}=${result.session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`});
