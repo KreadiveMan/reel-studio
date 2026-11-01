@@ -10,7 +10,7 @@ Read the existing `.agents/skills/reel-studio/SKILL.md` (Claude: `.claude/skills
 - Saved preferences or first profile: `instructions/SETTINGS.md`. Preserve fixed choices and existing profiles.
 - A named recording: `instructions/EDITORIAL.md`, then `instructions/EDITING.md`.
 - Motion graphics with no recording: `instructions/EDITORIAL.md`, then `instructions/GRAPHICS.md`. Use authored copy, not a fabricated transcript.
-- Several clips: `instructions/PODCAST.md`. Render/resume or audio/picture revision: `instructions/PRODUCTION.md`.
+- Several clips: `instructions/PODCAST.md`. Music with videos and photos (no speech), cut on the beat: `instructions/MONTAGE.md`. Render/resume or audio/picture revision: `instructions/PRODUCTION.md`.
 - Post descriptions: the existing social-captions skill.
 
 Open the live editor from the first prepared draft and keep it open. Follow `instructions/REVIEW-EDITOR.md` for manual-draft and stale-save protection. Preserve the user's approved scope; ask only for a missing consequential decision or additional work. Technical checks and creative review are separate: use `instructions/VISUAL-REVIEW.md` on the actual output.

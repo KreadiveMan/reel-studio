@@ -78,7 +78,8 @@ nav#projects .s { display:flex; gap:7px; align-items:center; font-size:12px; col
 .drop:hover, .drop.over { border-color:var(--accent); background:var(--accent-soft); }
 .drop strong { font-weight:600; } .drop .dim { font-size:14px; }
 .drop-icon { width:44px; height:44px; border-radius:50%; background:var(--bg); display:grid; place-items:center; color:var(--accent); box-shadow:var(--shadow); margin-bottom:8px; }
-.kinds { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:22px; }
+.kinds { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:22px; }
+@media (max-width:1180px) { .kinds { grid-template-columns:repeat(2, 1fr); } }
 .kind { position:relative; border:1px solid var(--line2); border-radius:14px; padding:16px; cursor:pointer; display:flex; flex-direction:column; gap:2px; transition:.15s; }
 .kind:hover { border-color:var(--faint); }
 .kind input { position:absolute; opacity:0; pointer-events:none; }

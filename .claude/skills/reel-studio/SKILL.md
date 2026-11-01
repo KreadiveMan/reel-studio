@@ -21,6 +21,7 @@ Read [EDITORIAL](../../../instructions/EDITORIAL.md), then choose:
 | A recording told by an illustrated narrator, the creator never on screen | [EDITING](../../../instructions/EDITING.md) with `style: "cartoon"` and `sourceKind: "cartoon"`, then [the cartoon guide](../../../instructions/styles/cartoon.md) |
 | Authored animation with no recording | [GRAPHICS](../../../instructions/GRAPHICS.md): `editor.mjs graphics <spec.json>`, full takeover scenes and authored-copy review |
 | Several clips from one recording, or a recording over 10 minutes | [PODCAST](../../../instructions/PODCAST.md) |
+| Music with videos and photos, no speech, cut on the beat | [MONTAGE](../../../instructions/MONTAGE.md): `montage.mjs run`, muted videos, moving photos, sound design |
 | Render/resume or audio/picture revision | [PRODUCTION](../../../instructions/PRODUCTION.md) |
 
 Named finished references use [STYLE-LEARNING](../../../instructions/STYLE-LEARNING.md): keep evidence/timecodes/confidence in project-local Style DNA and map its decisions to the new scene. Choose a style with [STYLES](../../../instructions/STYLES.md) and read the guide it links for that style (look, recipe, own scenes, what to avoid). Adding or promoting a global style is studio maintenance, done only on an explicit request with [STYLE-AUTHORING](../../../instructions/STYLE-AUTHORING.md). Supporting media uses [ASSET-PRODUCTION](../../../instructions/ASSET-PRODUCTION.md) for tool selection, current-project authorization, provenance, revisions and destination review.

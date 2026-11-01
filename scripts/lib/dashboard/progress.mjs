@@ -23,6 +23,22 @@ const clipFolders = async (root, slug) => slug ? (await fs.readdir(path.join(roo
 /** Which stage files exist now. graphics projects (no recording) skip upload and transcript; podcast projects count their clip projects. */
 export async function detectStages(root, {slug, rawFile, kind}) {
   if (kind === 'podcast') return detectPodcast(root, {slug, rawFile});
+  if (kind === 'montage') {
+    // The beat montage (scripts/montage.mjs): analysis, the shot plan, then preview and delivery renders.
+    const at = (...parts) => path.join(root, ...parts), p = (...parts) => at('Projects', slug ?? '_', ...parts);
+    const found = {
+      upload: !!rawFile && await exists(at(...rawFile.split('/'))),
+      transcript: !!slug && await exists(p('montage', 'analysis.json')),
+      plan: !!slug && await exists(p('montage', 'plan.json')),
+      draft: !!slug && await exists(p('montage', 'plan.json')),
+      preview: !!slug && await exists(p('renders', 'montage-preview.mp4')),
+      render: !!slug && await exists(p('renders', 'montage-delivery.mp4')),
+      done: !!slug && await exists(at('Outputs', slug, `${slug}.mp4`)),
+    };
+    let later = false;
+    for (const stage of [...STAGES].reverse()) { if (found[stage.id]) later = true; else if (later) found[stage.id] = true; }
+    return found;
+  }
   const at = (...parts) => path.join(root, ...parts);
   const p = (...parts) => slug ? at('Projects', slug, ...parts) : null;
   const graphics = kind === 'graphics';

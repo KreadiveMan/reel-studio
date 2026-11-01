@@ -307,3 +307,21 @@ test('the relay lets the real settings screen answer a Tailscale request, which 
     assert.equal(await get(listen, {host: 'evil.example'}), 421, 'the relay refuses other names');
   } finally { await close(); await settings.close(); rmSync(root, {recursive: true, force: true}); }
 });
+
+test('a music montage is one project with the music, the chosen pictures, length and pace in its first message', async () => withDashboard(async (app, root, stream) => {
+  mkdirSync(path.join(root, 'Raw'));
+  for (const name of ['song.mp3', 'a.mp4', 'b.jpg', 'notes.txt']) writeFileSync(path.join(root, 'Raw', name), 'x');
+  const bad = await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'montage', music: 'Raw/a.mp4', rawFiles: ['Raw/b.jpg']}});
+  assert.equal(bad.status, 400, 'the music must be an audio file');
+  assert.equal((await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'montage', music: 'Raw/song.mp3', rawFiles: ['Raw/notes.txt']}})).status, 400, 'pictures must be videos or photos');
+  const made = await call(app, {method: 'POST', pathname: '/api/projects', body: {kind: 'montage', music: 'Raw/song.mp3', rawFiles: ['Raw/a.mp4', 'Raw/b.jpg'], duration: '45', pace: 'fast', notes: 'حماس'}});
+  assert.equal(made.status, 200, made.text);
+  const project = app.store.get(made.json.project.id);
+  assert.deepEqual([project.kind, project.rawFile, project.media, project.duration, project.pace], ['montage', 'Raw/song.mp3', ['Raw/a.mp4', 'Raw/b.jpg'], '45', 'fast']);
+  const message = project.items[0].text;
+  for (const part of ['instructions/MONTAGE.md', 'Raw/song.mp3', 'Raw/a.mp4، Raw/b.jpg', '45 ثانية', 'سريعة', 'شيل صوت الفيديوهات', 'ملاحظاتي: حماس']) assert.ok(message.includes(part), part);
+  mkdirSync(path.join(root, 'Projects', 'beat', 'montage'), {recursive: true});
+  writeFileSync(path.join(root, 'Projects', 'beat', 'montage', 'analysis.json'), '{}');
+  const stages = await detectStages(root, {kind: 'montage', slug: 'beat', rawFile: 'Raw/song.mp3'});
+  assert.deepEqual(Object.entries(stages).filter(([, v]) => v).map(([k]) => k), ['upload', 'transcript']);
+}));

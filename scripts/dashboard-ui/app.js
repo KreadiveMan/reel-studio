@@ -63,22 +63,27 @@ function renderHome() {
   const form = $('.new-form', main);
   $('select[name=style]', form).insertAdjacentHTML('beforeend', state.styles.map((s) => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join(''));
   const syncKind = () => {
-    const kind = form.kind.value, graphics = kind === 'graphics';
-    $('.rec', form).hidden = graphics;
+    const kind = form.kind.value, graphics = kind === 'graphics', montage = kind === 'montage';
+    $('.rec', form).hidden = graphics || montage;
+    $('.mont', form).hidden = !montage;
+    $('.style-field', form).hidden = montage;
     $('.pod', form).hidden = kind !== 'podcast';
     $('.rec-label', form).textContent = kind === 'podcast' ? 'الحلقة' : 'الفيديو (ممكن تختار أكتر من واحد)';
     $('.notes-label', form).innerHTML = graphics ? 'فكرة الموشن' : 'ملاحظاتك <span class="opt">اختياري</span>';
     renderPicks();
   };
-  form.addEventListener('change', (e) => { if (e.target.name === 'kind') syncKind(); else if (e.target.name === 'pick') pickNote(); });
+  form.addEventListener('change', (e) => { if (e.target.name === 'kind') syncKind(); else if (e.target.name === 'pick') pickNote(); else if (e.target.name === 'mpick') montageNote(); });
   syncKind();
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const button = $('button[type=submit]', form), error = $('.form-error', form);
     button.disabled = true; error.textContent = '';
     try {
-      const rawFiles = [...form.querySelectorAll('input[name=pick]:checked')].map((x) => x.value);
-      const data = await api('/api/projects', {method: 'POST', body: JSON.stringify({kind: form.kind.value, rawFiles, clips: form.clips.value || null, style: form.style.value, title: form.title.value, notes: form.notes.value})});
+      const montage = form.kind.value === 'montage';
+      const rawFiles = [...form.querySelectorAll(montage ? 'input[name=mpick]:checked' : 'input[name=pick]:checked')].map((x) => x.value);
+      const body = {kind: form.kind.value, rawFiles, clips: form.clips.value || null, style: montage ? '' : form.style.value, title: form.title.value, notes: form.notes.value};
+      if (montage) Object.assign(body, {music: form.music.value, duration: form.duration.value, pace: form.pace.value});
+      const data = await api('/api/projects', {method: 'POST', body: JSON.stringify(body)});
       for (const p of data.projects ?? [data.project]) state.projects.set(p.id, p);
       state.projects.set(data.project.id, data.project);
       location.hash = 'p=' + data.project.id;
@@ -98,7 +103,7 @@ function renderRaw() {
 }
 function renderPicks() {
   const form = $('.new-form'); if (!form) return;
-  const box = $('.picks', form), podcast = form.kind.value === 'podcast';
+  const box = $('.rec .picks', form), podcast = form.kind.value === 'podcast';
   const kept = new Set([...box.querySelectorAll('input:checked')].map((x) => x.value));
   const videos = state.raw.filter((f) => /\.(mp4|mov|m4v|mkv|webm|avi|mts|mp3|wav|m4a|aac|flac|ogg)$/i.test(f.name));
   box.innerHTML = videos.length ? videos.map((f, i) => {
@@ -106,6 +111,24 @@ function renderPicks() {
     return `<label><input type="${podcast ? 'radio' : 'checkbox'}" name="pick" value="${esc(value)}" ${checked ? 'checked' : ''}> <span class="name">${esc(f.name)}</span> <span class="size">${size(f.bytes)}</span></label>`;
   }).join('') : '<span class="dim">ارفع فيديو الأول من فوق.</span>';
   pickNote();
+  // The montage picks: one music file, and any number of videos and photos.
+  const music = $('select[name=music]', form), keepMusic = music.value;
+  const audio = state.raw.filter((f) => /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i.test(f.name));
+  music.innerHTML = audio.length ? audio.map((f) => `<option value="Raw/${esc(f.name)}">${esc(f.name)}</option>`).join('') : '<option value="">ارفع ملف موسيقى الأول (mp3 أو wav)</option>';
+  if (keepMusic) music.value = keepMusic;
+  const mbox = $('.mpicks', form), mkept = new Set([...mbox.querySelectorAll('input:checked')].map((x) => x.value));
+  const visuals = state.raw.filter((f) => /\.(mp4|mov|m4v|mkv|webm|avi|mts|jpe?g|png|webp|gif|bmp|tiff?|heic)$/i.test(f.name));
+  mbox.innerHTML = visuals.length ? visuals.map((f) => {
+    const value = `Raw/${f.name}`, photo = /\.(jpe?g|png|webp|gif|bmp|tiff?|heic)$/i.test(f.name);
+    return `<label><input type="checkbox" name="mpick" value="${esc(value)}" ${mkept.size ? (mkept.has(value) ? 'checked' : '') : 'checked'}> <span>${photo ? '🖼️' : '🎬'}</span> <span class="name">${esc(f.name)}</span> <span class="size">${size(f.bytes)}</span></label>`;
+  }).join('') : '<span class="dim">ارفع فيديوهات أو صور الأول من فوق.</span>';
+  montageNote();
+}
+function montageNote() {
+  const form = $('.new-form'); if (!form) return;
+  const picked = [...form.querySelectorAll('input[name=mpick]:checked')].map((x) => x.value);
+  const photos = picked.filter((v) => /\.(jpe?g|png|webp|gif|bmp|tiff?|heic)$/i.test(v)).length;
+  $('.mpick-note', form).textContent = picked.length ? `${picked.length - photos} فيديو و${photos} صورة` : 'اختار فيديو أو صورة واحدة على الأقل';
 }
 function pickNote() {
   const form = $('.new-form'); if (!form) return;
@@ -156,7 +179,7 @@ async function openProject(id) {
   state.project = data.project;
   main.replaceChildren($('#tpl-project').content.cloneNode(true));
   $('.ptitle').textContent = data.project.title;
-  const where = data.project.kind === 'graphics' ? 'موشن من فكرة' : data.project.rawFile;
+  const where = data.project.kind === 'graphics' ? 'موشن من فكرة' : data.project.kind === 'montage' ? `مونتاج على ${data.project.rawFile} · ${data.project.media?.length ?? 0} ملف` : data.project.rawFile;
   $('.meta').textContent = `${where} · بدأ ${new Date(data.project.createdAt).toLocaleString('ar-EG')}`;
   const log = $('.log');
   for (const item of data.project.items) placeItem(log, itemNode(item));
@@ -404,12 +427,14 @@ function renderHead() {
   const [cls, label] = badge(p);
   const b = $('.badge'); b.className = 'badge ' + cls; b.textContent = label;
   let previous = Date.parse(p.createdAt);
+  // A music montage has no speech: its second and third stages are the beat analysis and the cut plan.
+  const labels = p.kind === 'montage' ? {upload: 'رفع الملفات', transcript: 'تحليل الإيقاع', plan: 'خطة القطعات', draft: 'اختيار اللقطات'} : {};
   $('.stages').innerHTML = state.stages.map((s) => {
     const at = p.stages?.[s.id];
     let note = '';
     if (at) { const t = Date.parse(at); note = `خلص بعد ${clock(t - previous)}`; previous = t; }
     else if (s.id === p.current) note = p.running ? `شغالين عليها من ${clock(Date.now() - previous)}` : 'الخطوة الجاية';
-    return `<li class="${at ? 'ok' : s.id === p.current ? 'now' : ''}"><b>${esc(s.label)}</b>${esc(note)}</li>`;
+    return `<li class="${at ? 'ok' : s.id === p.current ? 'now' : ''}"><b>${esc(labels[s.id] ?? s.label)}</b>${esc(note)}</li>`;
   }).join('');
   $('.bar i').style.width = (p.percent ?? 0) + '%';
   const activity = $('.activity');

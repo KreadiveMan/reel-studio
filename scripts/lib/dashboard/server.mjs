@@ -74,6 +74,12 @@ export function firstMessage(project, styleLabel) {
   const style = styleLabel ? ` بستايل ${styleLabel}` : '';
   const notes = project.notes?.trim() ? `\nملاحظاتي: ${project.notes.trim()}` : '';
   if (project.kind === 'graphics') return `اعمل موشن جرافيك من غير تسجيل${style}.\nالفكرة: ${project.notes.trim()}`;
+  if (project.kind === 'montage') {
+    const pace = {calm: 'هادية (قطعات أطول)', medium: 'متوسطة', fast: 'سريعة (قطعة كل ضربة)'}[project.pace] ?? 'متوسطة';
+    return [`اعمل مونتاج على الموسيقى (instructions/MONTAGE.md).`, `الموسيقى: ${project.rawFile}`, `الفيديوهات والصور: ${project.media.join('، ')}`,
+      `المدة: ${project.duration === 'full' ? 'طول الموسيقى' : `${project.duration} ثانية`}. السرعة: ${pace}.`,
+      'شيل صوت الفيديوهات، وخلّي القطعات على الضربات بساوند ديزاين.', ...(project.notes?.trim() ? [`ملاحظاتي: ${project.notes.trim()}`] : [])].join('\n');
+  }
   if (project.kind === 'podcast') return `طلّع ${project.clips ? `${project.clips} كليبات` : 'كليبات'} من الحلقة ${project.rawFile}${style}.${notes}`;
   return `عدّل الفيديو ${project.rawFile}${style}.${notes}`;
 }
@@ -242,7 +248,27 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
     }
     if (a === 'projects' && !b && req.method === 'POST') {
       const body = await bodyJson(req);
-      const kind = ['graphics', 'podcast'].includes(body.kind) ? body.kind : 'recording';
+      const kind = ['graphics', 'podcast', 'montage'].includes(body.kind) ? body.kind : 'recording';
+      if (kind === 'montage') {
+        const files = new Set((await listRawFiles(root)).map((f) => `Raw/${f.name}`));
+        const music = String(body.music ?? '');
+        if (!files.has(music) || !/\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i.test(music)) throw new HttpError(400, 'اختار ملف الموسيقى من الملفات المرفوعة.');
+        const media = [...new Set(Array.isArray(body.rawFiles) ? body.rawFiles : [])].filter((f) => files.has(f) && /\.(mp4|mov|m4v|mkv|webm|avi|mts|jpe?g|png|webp|gif|bmp|tiff?|heic)$/i.test(f));
+        if (!media.length) throw new HttpError(400, 'اختار فيديو أو صورة واحدة على الأقل.');
+        if (media.length > 60) throw new HttpError(400, 'أقصى عدد 60 ملف في المونتاج.');
+        const duration = ['15', '30', '45', '60', 'full'].includes(String(body.duration)) ? String(body.duration) : '30';
+        const pace = ['calm', 'medium', 'fast'].includes(body.pace) ? body.pace : 'medium';
+        const notes = String(body.notes ?? '').slice(0, 4000);
+        const title = String(body.title ?? '').trim().slice(0, 80) || `مونتاج — ${music.slice(4)}`;
+        const project = store.create({kind, title, rawFile: music, style: null, notes});
+        Object.assign(project, {media, duration, pace});
+        recordStages(project, await detectStages(root, project));
+        const busy = [...sessions.values()].some((session) => session.running);
+        if (busy) project.queued = {message: firstMessage(project), at: new Date().toISOString()};
+        store.touch(project); changed(project);
+        if (!busy) say(project, firstMessage(project));
+        return send(res, 200, {ok: true, project: full(project), projects: [summary(project)]});
+      }
       const style = body.style ? styles.find((s) => s.id === body.style) : null;
       if (body.style && !style) throw new HttpError(400, 'الستايل ده مش معروف.');
       const notes = String(body.notes ?? '').slice(0, 4000);

@@ -46,11 +46,20 @@
         <label class="kind"><input type="radio" name="kind" value="recording" checked><span class="k-icon">🎥</span><b>فيديو متسجّل</b><small>ريل من كلامك قدام الكاميرا</small></label>
         <label class="kind"><input type="radio" name="kind" value="graphics"><span class="k-icon">✨</span><b>موشن من فكرة</b><small>من غير تسجيل، من فكرة مكتوبة</small></label>
         <label class="kind"><input type="radio" name="kind" value="podcast"><span class="k-icon">🎙️</span><b>بودكاست</b><small>حلقة طويلة تتقطع كليبات</small></label>
+        <label class="kind"><input type="radio" name="kind" value="montage"><span class="k-icon">🎵</span><b>مونتاج على الموسيقى</b><small>فيديوهات وصور على الإيقاع بساوند ديزاين</small></label>
+      </div>
+      <div class="mont">
+        <label class="field"><span>الموسيقى</span><select name="music"></select></label>
+        <div class="field"><span>الفيديوهات والصور <span class="opt">صوت الفيديوهات هيتشال</span></span><div class="mpicks picks"></div><span class="mpick-note pick-note"></span></div>
+        <div class="row2">
+          <label class="field"><span>المدة</span><select name="duration"><option value="15">15 ثانية</option><option value="30" selected>30 ثانية</option><option value="45">45 ثانية</option><option value="60">دقيقة</option><option value="full">طول الموسيقى</option></select></label>
+          <label class="field"><span>السرعة</span><select name="pace"><option value="calm">هادية — قطعات أطول</option><option value="medium" selected>متوسطة</option><option value="fast">سريعة — قطعة كل ضربة</option></select></label>
+        </div>
       </div>
       <div class="field rec"><span class="rec-label">الفيديو</span><div class="picks"></div><span class="pick-note"></span></div>
       <label class="field pod"><span>عدد الكليبات <span class="opt">اختياري</span></span><input name="clips" type="number" min="1" max="10" placeholder="Claude يقترح من 3 لـ 5"></label>
       <div class="row2">
-        <label class="field"><span>الستايل</span><select name="style"><option value="">تلقائي — Claude يختار</option></select></label>
+        <label class="field style-field"><span>الستايل</span><select name="style"><option value="">تلقائي — Claude يختار</option></select></label>
         <label class="field"><span>اسم المشروع <span class="opt">اختياري</span></span><input name="title" maxlength="80" placeholder="مثلًا: ريل العرض الجديد"></label>
       </div>
       <label class="field"><span class="notes-label">ملاحظاتك</span><textarea name="notes" rows="3" maxlength="4000" placeholder="أي حاجة عايزها: الطول، الجمهور، حاجة تتشال…"></textarea></label>
