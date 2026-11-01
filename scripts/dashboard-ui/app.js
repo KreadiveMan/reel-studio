@@ -60,6 +60,16 @@ function renderHome() {
   for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
   for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); });
   drop.addEventListener('drop', (e) => enqueue(e.dataTransfer.files));
+  const linkForm = $('.link-form', main);
+  linkForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = linkForm.url.value.trim(); if (!url) return;
+    const button = $('button', linkForm); button.disabled = true;
+    try { const data = await api('/api/import', {method: 'POST', body: JSON.stringify({url})}); linkForm.reset(); importRow(data.job); }
+    catch (err) { alert(err.message); }
+    button.disabled = false;
+  });
+  for (const job of state.imports ?? []) importRow(job);
   const form = $('.new-form', main);
   $('select[name=style]', form).insertAdjacentHTML('beforeend', state.styles.map((s) => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join(''));
   const syncKind = () => {
@@ -134,6 +144,31 @@ function pickNote() {
   const form = $('.new-form'); if (!form) return;
   const n = form.querySelectorAll('input[name=pick]:checked').length;
   $('.pick-note', form).textContent = n > 1 ? `هيتعمل ${n} مشاريع، مشروع لكل فيديو، وهيشتغلوا ورا بعض في الطابور.` : '';
+}
+
+// A download from a Drive or MEGA link, shown like an upload row and updated by 'import' events.
+function importRow(job) {
+  const queue = $('.queue'); if (!queue) return;
+  let row = queue.querySelector(`[data-import="${CSS.escape(job.id)}"]`);
+  if (!row) {
+    row = document.createElement('div'); row.className = 'row'; row.dataset.import = job.id; row.dataset.started = Date.now();
+    row.innerHTML = '<div class="top2"><span class="name"></span><span class="size"></span></div><div class="bar"><i></i></div><div class="msg"></div>';
+    queue.prepend(row);
+  }
+  const host = /mega/i.test(job.link) ? 'MEGA' : 'Google Drive';
+  $('.name', row).textContent = job.folder ? `📁 فولدر ${host}${job.count > 1 ? ` · ${job.count} ملف` : ''}` : job.name ?? `${host}…`;
+  $('.size', row).textContent = job.total ? size(job.total) : '';
+  const pct = job.total ? Math.min(100, job.received / job.total * 100) : null;
+  const secs = (Date.now() - Number(row.dataset.started)) / 1000, rate = job.received / Math.max(secs, 0.1);
+  row.classList.toggle('done', job.status === 'done'); row.classList.toggle('fail', job.status === 'failed');
+  $('.bar i', row).style.width = job.status === 'done' ? '100%' : pct === null ? '8%' : pct.toFixed(1) + '%';
+  const fileLine = pct === null ? size(job.received) : `${pct.toFixed(0)}% — ${size(rate)}/ث${job.received ? ` — باقي حوالي ${clock((job.total - job.received) / rate * 1000)}` : ''}`;
+  $('.msg', row).textContent = job.status === 'done'
+    ? (job.folder ? `اتنزّل ✓ ${job.paths.length} ملف في Raw${job.skipped ? ` · اتخطّى ${job.skipped} ملف مش فيديو أو صورة أو صوت` : ''}${job.failedFiles?.length ? ` · ${job.failedFiles.length} ما نزلش: ${job.failedFiles.map((f) => f.name).join('، ')}` : ''}`
+      : `اتنزّل ✓ ${job.path}${job.name && job.path && !job.path.endsWith(job.name) ? ' (الاسم اتغير عشان ما يمسحش ملف قديم)' : ''}`)
+    : job.status === 'failed' ? job.error
+    : job.folder ? `ملف ${job.index + 1} من ${job.count}: ${job.name ?? ''} — ${fileLine}` : `بينزل من ${host}… ${fileLine}`;
+  if (job.folder && job.status === 'running' && job.count > 1) $('.bar i', row).style.width = (((job.index + (pct ?? 0) / 100) / job.count) * 100).toFixed(1) + '%';
 }
 
 let uploadChain = Promise.resolve();
@@ -526,6 +561,7 @@ function connect() {
       renderSide(); if (e.project.id === state.current) renderHead(); return;
     }
     if (e.type === 'removed') { state.projects.delete(e.id); renderSide(); if (e.id === state.current) location.hash = ''; return; }
+    if (e.type === 'import') { state.imports = [...(state.imports ?? []).filter((j) => j.id !== e.job.id), e.job]; importRow(e.job); return; }
     if (e.type === 'raw') { api('/api/raw').then((d) => { state.raw = d.files; renderRaw(); }).catch(() => {}); return; }
     if (e.id !== state.current) return;
     if (e.type === 'item') upsertItem(e.item);
@@ -539,7 +575,7 @@ function connect() {
 }
 async function refreshState() {
   const data = await api('/api/state');
-  Object.assign(state, {stages: data.stages, styles: data.styles, raw: data.raw, remote: data.remote});
+  Object.assign(state, {stages: data.stages, styles: data.styles, raw: data.raw, remote: data.remote, imports: data.imports ?? []});
   $('#disk').innerHTML = data.disk ? `فاضي <span class="size">${size(data.disk.free)}</span> من <span class="size">${size(data.disk.total)}</span><div class="meter"><i style="width:${Math.round((1 - data.disk.free / data.disk.total) * 100)}%"></i></div>` : '';
   $('#logout').hidden = !data.password;
   state.projects = new Map(data.projects.map((p) => [p.id, p]));

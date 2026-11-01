@@ -24,7 +24,7 @@ export function safeUploadName(raw) {
   if (dot <= 0) throw new HttpError(400, 'اسم الملف لازم يكون فيه امتداد زي .mp4');
   const ext = base.slice(dot + 1).toLowerCase();
   if (!UPLOAD_EXTENSIONS.includes(ext)) throw new HttpError(400, `نوع الملف .${ext} مش مدعوم. المدعوم: ${UPLOAD_EXTENSIONS.join(' ')}`);
-  const stem = base.slice(0, dot).trim().replace(/\s+/gu, '-').replace(/[^\p{L}\p{N}._-]/gu, '').replace(/^[.-]+/u, '').slice(0, 120);
+  const stem = base.slice(0, dot).trim().replace(/\s+/gu, '-').replace(/[^\p{L}\p{N}._-]/gu, '').replace(/-{2,}/gu, '-').replace(/^[.-]+/u, '').slice(0, 120);
   return `${stem || 'upload'}.${ext}`;
 }
 
@@ -50,25 +50,27 @@ export async function listRawFiles(root) {
   return files.sort((a, b) => b.modified.localeCompare(a.modified));
 }
 
-/** Streams one PUT body into a new file in Raw/; never replaces an existing name. */
-export async function receiveUpload(root, req, url) {
-  const name = safeUploadName(url.searchParams.get('name'));
-  const size = Number(req.headers['content-length']);
-  if (!Number.isSafeInteger(size) || size <= 0) throw new HttpError(411, 'حجم الملف مش معروف؛ جرّب تاني.');
-  if (size > MAX_UPLOAD_BYTES) throw new HttpError(413, 'الملف أكبر من 50 جيجا.');
+/**
+ * Streams `source` into a new file in Raw/ named `name` (already safe); never replaces an existing name.
+ * `size` is the announced length (null when unknown); `transforms` run between source and file (decryption);
+ * `onBytes(total)` reports progress.
+ */
+export async function saveRawStream(root, name, size, source, {transforms = [], onBytes = () => {}} = {}) {
+  if (size !== null && size > MAX_UPLOAD_BYTES) throw new HttpError(413, 'الملف أكبر من 50 جيجا.');
   const dir = await rawFolder(root);
   const free = await fs.statfs(dir).then(s => s.bavail * s.bsize).catch(() => Infinity);
-  if (size + DISK_MARGIN > free) throw new HttpError(507, `المساحة الفاضية على السيرفر مش كفاية (فاضي ${(free / 1024 ** 3).toFixed(1)} جيجا).`);
+  if ((size ?? 0) + DISK_MARGIN > free) throw new HttpError(507, `المساحة الفاضية على السيرفر مش كفاية (فاضي ${(free / 1024 ** 3).toFixed(1)} جيجا).`);
   const partial = path.join(dir, `.${randomUUID()}.upload.partial`);
   let received = 0;
   const counter = new Transform({transform(chunk, _enc, done) {
     received += chunk.length;
-    if (received > size) return done(new HttpError(400, 'الملف وصل أكبر من حجمه المعلن.'));
+    if ((size !== null && received > size) || received > MAX_UPLOAD_BYTES) return done(new HttpError(400, 'الملف وصل أكبر من حجمه المعلن.'));
+    onBytes(received);
     done(null, chunk);
   }});
   try {
-    await pipeline(req, counter, createWriteStream(partial, {flags: 'wx'}));
-    if (received !== size) throw new HttpError(400, 'الرفع اتقطع قبل ما يكمل؛ جرّب تاني.');
+    await pipeline(source, ...transforms, counter, createWriteStream(partial, {flags: 'wx'}));
+    if ((size !== null && received !== size) || received === 0) throw new HttpError(400, 'الملف اتقطع قبل ما يكمل؛ جرّب تاني.');
     const dot = name.lastIndexOf('.');
     for (let n = 1; n < 1000; n++) {
       const candidate = n === 1 ? name : `${name.slice(0, dot)}-${n}${name.slice(dot)}`;
@@ -81,6 +83,14 @@ export async function receiveUpload(root, req, url) {
   } finally {
     await fs.rm(partial, {force: true});
   }
+}
+
+/** Streams one PUT body into a new file in Raw/; never replaces an existing name. */
+export async function receiveUpload(root, req, url) {
+  const name = safeUploadName(url.searchParams.get('name'));
+  const size = Number(req.headers['content-length']);
+  if (!Number.isSafeInteger(size) || size <= 0) throw new HttpError(411, 'حجم الملف مش معروف؛ جرّب تاني.');
+  return saveRawStream(root, name, size, req);
 }
 
 

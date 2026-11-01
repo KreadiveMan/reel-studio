@@ -98,6 +98,12 @@ nav#projects .s { display:flex; gap:7px; align-items:center; font-size:12px; col
 
 /* ---------- upload rows ---------- */
 .queue:not(:empty) { margin-top:14px; }
+.link-form { display:flex; gap:10px; align-items:center; margin-top:16px; }
+.link-form .or { color:var(--faint); font-size:13px; white-space:nowrap; }
+.link-form input { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line2); border-radius:12px; padding:10px 14px; outline:none; font-family:var(--mono); font-size:13px; }
+.link-form input:focus { border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
+.link-hint { font-size:12px; margin:8px 0 0; }
+@media (max-width:860px) { .link-form { flex-wrap:wrap; } .link-form .or { width:100%; } }
 .row { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-top:8px; }
 .row .top2 { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .name, code { direction:ltr; unicode-bidi:isolate; font-family:var(--mono); font-size:13px; overflow-wrap:anywhere; }

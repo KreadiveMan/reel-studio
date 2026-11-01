@@ -325,3 +325,19 @@ test('a music montage is one project with the music, the chosen pictures, length
   const stages = await detectStages(root, {kind: 'montage', slug: 'beat', rawFile: 'Raw/song.mp3'});
   assert.deepEqual(Object.entries(stages).filter(([, v]) => v).map(([k]) => k), ['upload', 'transcript']);
 }));
+
+test('a Drive link downloads into Raw in the background with live progress, and other sites are refused', async () => {
+  const root = mkdtempSync(path.join(ROOT, 'state', 'tmp', 'dashboard-import-'));
+  const fetchImpl = async () => new Response('0123456789', {headers: {'content-type': 'video/mp4', 'content-length': '10', 'content-disposition': 'attachment; filename="trip.mp4"'}});
+  const app = await createDashboardServer({root, port: 0, claudeCommand: FAKE, relays: false, fetchImpl});
+  const stream = events(app);
+  try {
+    assert.equal((await call(app, {method: 'POST', pathname: '/api/import', body: {url: 'https://example.com/a.mp4'}})).status, 400);
+    const started = await call(app, {method: 'POST', pathname: '/api/import', body: {url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMn/view'}});
+    assert.equal(started.status, 200);
+    const done = await stream.wait((e) => e.type === 'import' && e.job.id === started.json.job.id && e.job.status === 'done');
+    assert.equal(done.job.path, 'Raw/trip.mp4');
+    await stream.wait((e) => e.type === 'raw');
+    assert.deepEqual((await call(app, {pathname: '/api/raw'})).json.files.map((f) => f.name), ['trip.mp4']);
+  } finally { stream.close(); await app.close(); rmSync(root, {recursive: true, force: true}); }
+});

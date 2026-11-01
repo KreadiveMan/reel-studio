@@ -12,6 +12,8 @@ import {mediaFile, projectDetails, sendMedia} from './details.mjs';
 import {RENDER_PROGRESS_DIR} from '../render-progress.mjs';
 import {PasswordGate} from './auth.mjs';
 import {allowedHost, publicLinks, readRemote, startRelays} from './remote.mjs';
+import {importLink, parseLink} from '../link-import.mjs';
+import {randomUUID} from 'node:crypto';
 
 // The studio dashboard: projects, uploads into Raw/, a chat with Claude Code running in the studio folder,
 // approve/deny buttons for anything outside the allowlist, and stage progress read from the project files.
@@ -99,7 +101,7 @@ async function ownedFolders(root, slug) {
   return {projects: await near('Projects'), outputs: await near('Outputs')};
 }
 
-export async function createDashboardServer({root, port = 0, claudeCommand, sessionFactory, settingsPort = 4381, startSettings, relays = true} = {}) {
+export async function createDashboardServer({root, port = 0, claudeCommand, sessionFactory, settingsPort = 4381, startSettings, relays = true, fetchImpl = fetch} = {}) {
   root = await fs.realpath(root);
   const store = await new DashboardStore(root).open();
   const token = await store.token();
@@ -115,6 +117,25 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
   const remote = await readRemote(path.join(root, 'state', 'dashboard'));
   const closeRelays = remote && relays ? await startRelays(remote, relays === true ? undefined : {relays}) : null;
   let settings = null;
+  // Downloads from Google Drive / MEGA links into Raw/, at most three at a time; progress goes out as 'import' events.
+  const imports = new Map();
+  function startImport(link) {
+    if ([...imports.values()].filter((j) => j.status === 'running').length >= 3) throw new HttpError(429, 'فيه 3 تحميلات شغالة. استنى واحد يخلص.');
+    const job = {id: randomUUID().slice(0, 8), link, folder: parseLink(link)?.provider.endsWith('-folder') ?? false, name: null, received: 0, total: null, index: 0, count: 1, status: 'running', error: null, path: null, paths: [], skipped: 0, failedFiles: [], startedAt: new Date().toISOString()};
+    imports.set(job.id, job);
+    let last = 0;
+    const emit = (force = false) => { if (force || Date.now() - last > 500) { last = Date.now(); broadcast({type: 'import', job}); } };
+    emit(true);
+    importLink(root, link, {fetchImpl, onProgress: ({name, received, total, index, count}) => { const next = index !== job.index; Object.assign(job, {name, received, total, index, count}); emit(next); if (next) broadcast({type: 'raw'}); }})
+      .then((result) => {
+        if (result.folder) Object.assign(job, {status: 'done', paths: result.files.map((f) => f.path), skipped: result.skipped.length, failedFiles: result.failed});
+        else Object.assign(job, {status: 'done', path: result.path, paths: [result.path], name: result.name, received: result.bytes});
+        emit(true); broadcast({type: 'raw'});
+      })
+      .catch((error) => { Object.assign(job, {status: 'failed', error: error.status ? error.message : `التحميل وقف: ${error.message}`}); emit(true); })
+      .finally(() => setTimeout(() => imports.delete(job.id), 10 * 60 * 1000).unref());
+    return job;
+  }
   let origin;
 
   const broadcast = (event) => { const line = `data: ${JSON.stringify(event)}\n\n`; for (const res of clients) res.write(line); };
@@ -221,7 +242,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
     if (req.method !== 'GET' && req.headers['x-dashboard'] !== '1') throw new HttpError(403, 'الطلب لازم يجي من اللوحة.');
     if (a === 'state' && req.method === 'GET') {
       const disk = await fs.statfs(root).then((st) => ({free: st.bavail * st.bsize, total: st.blocks * st.bsize})).catch(() => null);
-      return send(res, 200, {ok: true, stages: STAGES, styles, projects: store.list().map(summary), raw: await listRawFiles(root), disk, password: gate.enabled, remote: publicLinks(req.headers.host, remote)});
+      return send(res, 200, {ok: true, stages: STAGES, styles, projects: store.list().map(summary), raw: await listRawFiles(root), imports: [...imports.values()], disk, password: gate.enabled, remote: publicLinks(req.headers.host, remote)});
     }
     if (a === 'settings' && req.method === 'POST') {
       if (!settings) {
@@ -241,6 +262,12 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
       return send(res, 200, {ok: true});
     }
     if (a === 'raw' && req.method === 'GET') return send(res, 200, {ok: true, files: await listRawFiles(root)});
+    if (a === 'import' && req.method === 'POST') {
+      const link = String((await bodyJson(req)).url ?? '').trim();
+      const parsed = parseLink(link);
+      if (!parsed) throw new HttpError(400, 'اللينك ده مش مدعوم. الصق لينك ملف أو فولدر من Google Drive أو MEGA.');
+      return send(res, 200, {ok: true, job: startImport(link)});
+    }
     if (a === 'upload' && req.method === 'PUT') { const result = await receiveUpload(root, req, url); broadcast({type: 'raw'}); return send(res, 200, result); }
     if (a === 'events' && req.method === 'GET') {
       res.writeHead(200, {'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive'});
