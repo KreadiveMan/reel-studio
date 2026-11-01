@@ -7,6 +7,7 @@ import { assertProjectOutput } from './lib/project-paths.mjs';
 import { checkedPath } from './lib/job-paths.mjs';
 import { withOutputTransaction } from './lib/delivery.mjs';
 import { proxyGeometry } from './lib/proxy-geometry.mjs';
+import { cpuThreads } from './lib/cpu-budget.mjs';
 
 const args = parseArgs(process.argv.slice(2), { height: '540' });
 if (!args._[0]) throw new Error('Usage: node scripts/proxy.mjs <file> [--height 540] [--out path.mp4] [--force]');
@@ -44,9 +45,9 @@ if (!args.force && previous?.sourceHash === sourceHash && previous.height === he
 }
 if (!cached) {
   await withOutputTransaction(out, async (stage) => {
-    await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-threads', '4', '-i', file, '-map', '0:v:0', '-map', '0:a:0?',
+    await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-threads', String(cpuThreads()), '-i', file, '-map', '0:v:0', '-map', '0:a:0?',
       '-vf', `scale=${geometry.width}:${height},setsar=1`, '-r', String(fps), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '27',
-      '-threads', '4', '-g', String(Math.round(fps)), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', stage]);
+      '-threads', String(cpuThreads()), '-g', String(Math.round(fps)), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', stage]);
     const probe = await ffprobeJson(stage);
     const pv = probe.streams?.find((s) => s.codec_type === 'video');
     const proxyDurationSec = Number(pv?.duration ?? probe.format?.duration);

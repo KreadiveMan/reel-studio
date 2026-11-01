@@ -1,6 +1,7 @@
 import {spawn} from 'node:child_process';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
+import {cpuThreads} from './cpu-budget.mjs';
 
 // Joins several recordings into one source file for one reel. See scripts/join-recordings.mjs for the rules.
 function run(command, args) {
@@ -54,7 +55,7 @@ export async function joinFiles(root, sources, dir) {
       const codec = hdr
         ? ['-c:v', 'libx265', '-crf', '16', '-preset', 'medium', '-tag:v', 'hvc1', '-color_primaries', first.color_primaries ?? 'bt2020', '-color_trc', first.color_transfer, '-colorspace', first.color_space ?? 'bt2020nc']
         : ['-c:v', 'libx264', '-crf', '15', '-preset', 'medium', '-pix_fmt', 'yuv420p'];
-      await run('ffmpeg', ['-v', 'error', ...inputs, '-filter_complex', graph, '-map', '[v]', '-map', '[a]', ...codec, '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', '-y', partial]);
+      await run('ffmpeg', ['-v', 'error', ...inputs, '-filter_complex', graph, '-map', '[v]', '-map', '[a]', '-threads', String(cpuThreads()), ...codec, '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', '-y', partial]);
     }
     await fs.rename(partial, out);
   } finally { await fs.rm(partial, {force: true}); }

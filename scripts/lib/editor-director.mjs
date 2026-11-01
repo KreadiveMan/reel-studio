@@ -57,6 +57,7 @@ export const EDITOR_TONES = Object.freeze(['energetic','calm','editorial']);
 export const EDITOR_SOUND_MODES = Object.freeze(['auto','recipes','none']);
 export const DEFAULT_SOUND_MODE='auto';
 import {proofScreenSceneVariants} from '../../engine/src/creative-kit/proof-screen/schema.ts';
+import {renderConcurrency} from './cpu-budget.mjs';
 const KINETIC_SCHEMAS=Object.fromEntries([...kineticSceneVariants,...librarySceneVariants,...screenRecordingVariants,...semanticSceneVariants,...figuresSceneVariants,...chatThreadSceneVariants,...styleSceneVariants,...arabicTypeSceneVariants,...proofScreenSceneVariants].map(schema=>[schema.shape.family.value,schema]));
 export const BEAT_FAMILIES = Object.freeze({hook:'intro',intro:'intro',evidence:'proof',proof:'proof',steps:'process',process:'process',
   comparison:'comparison',comment:'comment','comment-cta':'comment',follow:'follow','follow-cta':'follow','project-scene':'project-scene',
@@ -596,7 +597,7 @@ export async function planEditorBrief(briefPath,{out,delivery=false,replace=fals
 
 
 
-export function editorRenderCommand(manifest,prepared,{delivery=false,review=false,out,frames,motionPlan,motionCrop,concurrency=4,noProxy=false,mediaEngine='offthread',png=false,crf,faceReviewedBy,voice='off',sfxUnder,chunkFrames,chunkJobs,intentionalBlack}={}) {
+export function editorRenderCommand(manifest,prepared,{delivery=false,review=false,out,frames,motionPlan,motionCrop,concurrency=renderConcurrency(),noProxy=false,mediaEngine='offthread',png=false,crf,faceReviewedBy,voice='off',sfxUnder,chunkFrames,chunkJobs,intentionalBlack}={}) {
   if(delivery && review) throw new Error('Choose one render mode.');
   if(delivery) assertDeliveryReady(manifest);
   if(motionPlan!==undefined && motionCrop!==undefined) throw new Error('Choose one motion mode: motionPlan or motionCrop.');

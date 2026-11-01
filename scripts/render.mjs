@@ -19,6 +19,7 @@ import {renderIdentity,createRenderInputGuard,chunkProfile,chunkBudget,renderChu
 import {recordStudioEvent} from './lib/studio-stats.mjs';
 import {deliveredStyle} from './lib/delivered-style.mjs';
 import { renderChromiumOptions } from './lib/render-gl.mjs';
+import { renderConcurrency } from './lib/cpu-budget.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const comp = args._[0];
@@ -40,7 +41,8 @@ const PRESET = {
   review: { scale: 1, crf: 17, x264Preset: 'medium', jpegQuality: 90 },
   deliver: { scale: 1, crf: 16, x264Preset: 'slow', jpegQuality: 95 },
 }[mode];
-const concurrency = args.concurrency ? (String(args.concurrency).endsWith('%') ? args.concurrency : Number(args.concurrency)) : 4;
+// Default: the studio CPU share (80% of the cores) in render tabs, limited by free memory (scripts/lib/cpu-budget.mjs).
+const concurrency = args.concurrency ? (String(args.concurrency).endsWith('%') ? args.concurrency : Number(args.concurrency)) : renderConcurrency();
 const crf = args.crf ? Number(args.crf) : PRESET.crf;
 const jpegQuality = args.jpeg ? Number(args.jpeg) : PRESET.jpegQuality;
 const channel = args.channel ?? 'organic';

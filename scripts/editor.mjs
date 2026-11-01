@@ -5,6 +5,7 @@ import {listMotionRecipes} from '../engine/src/motion-library/catalog.ts';
 import {initializeGraphicsProject} from './lib/graphics-project.mjs';
 import {promoteEdit} from './lib/edit-safety.mjs';
 import {applyEditPatch,editRevision} from './lib/edit-apply.mjs';
+import {renderConcurrency} from './lib/cpu-budget.mjs';
 
 const usage='Usage: editor.mjs styles | motions [--style id] [--family screen-focus|data-story] [--query text] | graphics <graphics-spec.json> [--check] [--deliver] | recommend <brief.json> | plan <brief.json> [--out Projects/id/edit.json] [--deliver] [--replace [--keep-captions | --discard-edits]] | promote <edit.json> [--reviewed-by name] | prepare <edit.json> [--no-proxy] | render <edit.json> [--out Projects/id/video.mp4] [--review | --deliver] [--motion-plan file.json | --motion-crop w:h:x:y] [--frames a-b] [--concurrency 4] [--no-proxy] [--media-engine offthread|webcodecs] [--png] [--crf n] [--face-reviewed-by name] [--voice clean|denoise] [--sfx-under dB] | validate <brief-or-edit.json> [--deliver] | apply <edit.json> --patch <patch.json> [--label text] | revision <edit.json>';
 try {
@@ -28,7 +29,7 @@ try {
   else if(action==='apply'){if(!args.patch)throw new Error(usage);result=await applyEditPatch(file,args.patch,{label:args.label});}
   else if(action==='revision') result=await editRevision(file);
   else result=await renderEditorManifest(file,{out:args.out,delivery:!!args.deliver,review:!!args.review,motionPlan:args['motion-plan'],
-    motionCrop:args['motion-crop'],frames:args.frames,concurrency:args.concurrency===undefined?4:Number(args.concurrency),
+    motionCrop:args['motion-crop'],frames:args.frames,concurrency:args.concurrency===undefined?renderConcurrency():Number(args.concurrency),
     noProxy:!!args['no-proxy'],mediaEngine:args['media-engine']??'offthread',png:!!args.png,
     crf:args.crf===undefined?undefined:Number(args.crf),faceReviewedBy:args['face-reviewed-by'],voice:args.voice??'off',sfxUnder:args['sfx-under']===undefined?undefined:Number(args['sfx-under']),
     chunkFrames:args['chunk-frames']===undefined?undefined:Number(args['chunk-frames']),chunkJobs:args['chunk-jobs']===undefined?undefined:Number(args['chunk-jobs']),intentionalBlack:args['intentional-black'],onProgress});

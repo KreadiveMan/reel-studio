@@ -14,6 +14,7 @@ import {MAX_PREVIEW_SOUNDS, PREVIEW_SFX_TEXT, SHARED_AUDIO_TAGS, previewSoundsFo
 import {encodeWav, mixHits} from '../scripts/sfx.mjs';
 import {dialectIn} from './helpers/dialect.mjs';
 import {reviewManifest} from './helpers/review-manifest.mjs';
+import {renderConcurrency} from '../scripts/lib/cpu-budget.mjs';
 
 const catalog = await loadSoundCatalog();
 const expectedWav = (recipe, gain) => {
@@ -205,7 +206,7 @@ test('the export never reaches the preview code, the editor bundle carries it, a
   assert.deepEqual(editorRenderCommand(manifest, prepared, {}), {
     script: 'scripts/render.mjs',
     args: ['PreparedEdit', '--out', 'Projects/command-test/renders/edit-preview.mp4', '--props-file', 'Projects/command-test/prepared/props.json', '--sfx',
-      'Projects/command-test/prepared/sounds.wav', '--channel', 'organic', '--concurrency', '4', '--media-engine', 'offthread', '--preview'],
+      'Projects/command-test/prepared/sounds.wav', '--channel', 'organic', '--concurrency', String(renderConcurrency()), '--media-engine', 'offthread', '--preview'],
     inputs: ['Raw/example.mp4', 'Projects/command-test/prepared/props.json', 'Projects/command-test/prepared/sounds.wav'],
     output: 'Projects/command-test/renders/edit-preview.mp4', qc: 'Projects/command-test/renders/edit-preview.mp4.qc.json', safeReport: null,
   }, 'the export still receives the prepared sounds.wav and nothing from the preview');

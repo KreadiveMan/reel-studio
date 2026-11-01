@@ -10,7 +10,7 @@ try {
   --start 0 --duration 10        Optional source range in seconds. Timestamps stay source-absolute.
   --chunk-seconds ${DEFAULT_CHUNK_MS / 1000}             Length of each decoded piece, 2 to 30. Progress lines show the piece number and the time left.
   --overlap-seconds ${DEFAULT_OVERLAP_MS / 1000}            Keep overlap context; review every seam.
-  --threads 4 --backend cpu      Local CPU backend.
+  --threads N --backend cpu      Local CPU backend (default: 80% of the cores, up to 12).
   --timing token|dtw             Token estimates by default; optional DTW can be expensive.
   --vad on|off                   Optional installed Silero VAD; default off.
   --out "Projects/example/transcript"  Project-local output directory.

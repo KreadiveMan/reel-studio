@@ -1,4 +1,5 @@
 import './lib/project-tmp.mjs';
+import { cpuThreads } from './lib/cpu-budget.mjs';
 import path from 'node:path';
 import {promises as fs} from 'node:fs';
 import {ROOT, run, parseArgs, ffprobeJson, summarizeProbe, writeJson, readCachedJson} from './lib/media.mjs';
@@ -113,7 +114,7 @@ async function main() {
   const sidecar = await withOutputTransaction(outAbs, async (staged, work) => {
     const graphFile = path.join(work, 'redact.ffgraph');
     await fs.writeFile(graphFile, filter, 'utf8');
-    await run('ffmpeg', ['-hide_banner', '-v', 'error', '-nostdin', '-y', '-threads', '4', '-i', inAbs,
+    await run('ffmpeg', ['-hide_banner', '-v', 'error', '-nostdin', '-y', '-threads', String(cpuThreads()), '-i', inAbs,
       '-/filter_complex', graphFile, '-map', `[${REDACT_OUTPUT_LABEL}]`, ...(audio ? ['-map', `0:${audio.index}`] : []),
       '-map_metadata', '-1', '-map_chapters', '-1',
       '-c:v', REDACT_ENCODE.codec, '-preset', REDACT_ENCODE.preset, '-crf', String(REDACT_ENCODE.crf), '-pix_fmt', REDACT_ENCODE.pixFmt,

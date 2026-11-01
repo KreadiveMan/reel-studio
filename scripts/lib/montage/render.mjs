@@ -1,10 +1,10 @@
 import {spawn} from 'node:child_process';
 import {promises as fs} from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import {ROOT} from '../project-paths.mjs';
 import {createRenderProgress} from '../render-progress.mjs';
 import {FPS, WIDTH, HEIGHT} from './plan.mjs';
+import {cpuThreads} from '../cpu-budget.mjs';
 
 // Renders a beat-montage plan with FFmpeg: every shot becomes an exact-length 1080×1920 clip (videos muted,
 // photos moving), the clips are joined and encoded once to the studio's delivery spec (H.264 High 4.1, closed
@@ -27,7 +27,7 @@ const cover = `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase,cro
 /** FFmpeg arguments for one shot (exported for tests). */
 export function shotArgs(shot, file, out, {preview = false} = {}) {
   const n = shot.frames, seconds = n / FPS;
-  const encode = ['-an', '-c:v', 'libx264', '-preset', preview ? 'ultrafast' : 'veryfast', '-crf', preview ? '20' : '14', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-frames:v', String(n), '-y', out];
+  const encode = ['-an', '-threads', '2', '-c:v', 'libx264', '-preset', preview ? 'ultrafast' : 'veryfast', '-crf', preview ? '20' : '14', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-frames:v', String(n), '-y', out];
   const extras = [];
   if (shot.punch) extras.push(`zoompan=z='if(lt(on,8),1.12-0.12*on/8,1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${WIDTH}x${HEIGHT}:fps=${FPS}`);
   if (shot.flash) extras.push('fade=t=in:st=0:d=0.15:color=white');
@@ -59,7 +59,8 @@ export async function renderPlan(plan, out, {mode = 'preview', log = () => {}} =
     // 1. Shots, in parallel.
     let done = 0;
     const parts = plan.shots.map((_, i) => path.join(work, `shot-${String(i).padStart(4, '0')}.mp4`));
-    await pool(plan.shots, Math.max(1, Math.floor(os.availableParallelism() / 2)), async (shot, i) => {
+    // Shots run side by side, two FFmpeg threads each, inside the studio CPU share.
+    await pool(plan.shots, Math.max(1, Math.floor(cpuThreads() / 2)), async (shot, i) => {
       await run('ffmpeg', shotArgs(shot, path.join(ROOT, ...shot.media.split('/')), parts[i], {preview}));
       done++;
       progress.frames({percent: (done / plan.shots.length) * 100});
@@ -88,7 +89,7 @@ export async function renderPlan(plan, out, {mode = 'preview', log = () => {}} =
     await fs.writeFile(list, parts.map((p) => `file '${p.replaceAll("'", "'\\''")}'`).join('\n'));
     const temporary = `${out}.partial.mp4`;
     await run('ffmpeg', ['-v', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-i', mixed, '-map', '0:v:0', '-map', '1:a:0',
-      '-c:v', 'libx264', '-preset', preview ? 'veryfast' : 'medium', '-crf', preview ? '21' : '18', '-maxrate', '20M', '-bufsize', '40M',
+      '-threads', String(cpuThreads()), '-c:v', 'libx264', '-preset', preview ? 'veryfast' : 'medium', '-crf', preview ? '21' : '18', '-maxrate', '20M', '-bufsize', '40M',
       '-profile:v', 'high', '-level:v', '4.1', '-g', String(FPS * 2), '-keyint_min', String(FPS * 2), '-sc_threshold', '0', '-flags', '+cgop',
       '-pix_fmt', 'yuv420p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-r', String(FPS),
       '-c:a', 'aac', '-b:a', '320k', '-ar', '48000', '-ac', '2', '-frames:v', String(plan.totalFrames), '-movflags', '+faststart', '-y', temporary]);

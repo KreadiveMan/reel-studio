@@ -1,4 +1,5 @@
 import './project-tmp.mjs';
+import { cpuThreads } from './cpu-budget.mjs';
 import { exeName, toolRelative } from './platform.mjs';
 import fs from 'node:fs';
 import { promises as fsp } from 'node:fs';
@@ -33,7 +34,7 @@ export function normalizeTranscriptionOptions(args) {
   if (overlapMs >= chunkMs) throw new Error('Overlap must be smaller than the chunk.');
   const startMs = Math.round(number(args.start, 'start', 0, 86400, 0) * 1000);
   const durationMs = args.duration === undefined ? null : Math.round(number(args.duration, 'duration', 0.1, 86400, 1) * 1000);
-  const threads = number(args.threads, 'threads', 1, 12, 4);
+  const threads = number(args.threads, 'threads', 1, 12, cpuThreads(12));
   if (!Number.isInteger(threads)) throw new Error('--threads must be an integer.');
   const language = args.lang ?? 'ar';
   if (typeof language !== 'string' || !/^(auto|[a-z]{2,3})$/i.test(language)) throw new Error('Invalid language code.');

@@ -8,6 +8,7 @@ import {profileToBrief, readProfileFile} from './branding.mjs';
 import {planEditorBrief, prepareEditorManifest, renderEditorManifest, validateEditorBrief} from './editor-director.mjs';
 import {verifyPreparedProps} from './prepared-props.mjs';
 import {CARTOON_SOURCE_KIND} from '../../engine/src/styles/cartoon/scenes/math.ts';
+import { cpuThreads } from './cpu-budget.mjs';
 
 const MAX_CLIP_SEC = 600;
 const text = (value, label, max = 200) => {
@@ -257,7 +258,7 @@ async function extractClip(batch, clip, base, onProgress) {
   const output = await ensureOutput(window, {project: clip.projectId});
   await withOutputTransaction(output, async staged => {
     await run('ffmpeg', ['-v', 'error', '-ss', String(clip.fromSec), '-i', await checkedPath(batch.source.path, {mustExist: true}), '-t', String(sec(clip.toSec - clip.fromSec)),
-      '-map', '0:v:0', '-map', '0:a:0', '-c:v', 'ffv1', '-level', '3', '-threads', '4', '-fps_mode', 'passthrough', '-c:a', 'pcm_s24le', staged]);
+      '-map', '0:v:0', '-map', '0:a:0', '-c:v', 'ffv1', '-level', '3', '-threads', String(cpuThreads()), '-fps_mode', 'passthrough', '-c:a', 'pcm_s24le', staged]);
     const probe = await ffprobeJson(staged);
     const duration = Number(probe.format?.duration);
     if (!probe.streams?.some(s => s.codec_type === 'video') || !probe.streams.some(s => s.codec_type === 'audio') || !Number.isFinite(duration)
