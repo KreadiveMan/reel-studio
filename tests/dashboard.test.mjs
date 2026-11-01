@@ -262,3 +262,48 @@ test('podcast stages follow the batch and its clip projects', async () => {
     assert.deepEqual((await projectDetails(root, 'ep')).clips.map((c) => [c.slug, c.outputs.length]), [['ep--one', 1]]);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
+
+test('over Tailscale the dashboard accepts only the saved machine name and maps the editor and settings to its https ports', async () => {
+  const {allowedHost, publicLinks, saveRemote} = await import('../scripts/lib/dashboard/remote.mjs');
+  const remote = {hosts: ['studio.tail1234.ts.net']};
+  assert.equal(allowedHost('127.0.0.1:4382', null), true);
+  assert.equal(allowedHost('studio.tail1234.ts.net', remote), true);
+  assert.equal(allowedHost('studio.tail1234.ts.net:443', remote), true);
+  assert.equal(allowedHost('studio.tail1234.ts.net', null), false, 'off until --tailscale saves the name');
+  assert.equal(allowedHost('evil.example', remote), false);
+  assert.equal(allowedHost('studio.tail1234.ts.net.evil.example', remote), false);
+  assert.equal(publicLinks('127.0.0.1:4382', remote), null, 'local pages keep local links');
+  assert.deepEqual(publicLinks('studio.tail1234.ts.net', remote), {editor: {local: 4380, url: 'https://studio.tail1234.ts.net:8443'}, settings: {local: 4381, url: 'https://studio.tail1234.ts.net:8444'}});
+  const root = mkdtempSync(path.join(ROOT, 'state', 'tmp', 'dashboard-remote-'));
+  await assert.rejects(() => saveRemote(path.join(root, 'state', 'dashboard'), ['bad host!']));
+  await saveRemote(path.join(root, 'state', 'dashboard'), ['Studio.Tail1234.ts.net.']);
+  const app = await createDashboardServer({root, port: 0, claudeCommand: FAKE, relays: false});
+  try {
+    const host = 'studio.tail1234.ts.net';
+    const visit = await call(app, {pathname: `/?token=${app.token}`, cookie: false, headers: {host}});
+    assert.match(visit.headers['set-cookie'][0], /Secure/);
+    const state = await call(app, {pathname: '/api/state', headers: {host}});
+    assert.equal(state.status, 200); assert.equal(state.json.remote.editor.url, 'https://studio.tail1234.ts.net:8443');
+    assert.equal((await call(app, {pathname: '/api/state'})).json.remote, null);
+    assert.equal((await call(app, {pathname: '/api/state', headers: {host: 'other.tail1234.ts.net'}})).status, 421);
+  } finally { await app.close(); rmSync(root, {recursive: true, force: true}); }
+});
+
+test('the relay lets the real settings screen answer a Tailscale request, which it refuses when reached directly', async () => {
+  const {startRelays} = await import('../scripts/lib/dashboard/remote.mjs');
+  const {createSettingsServer} = await import('../scripts/lib/settings-server.mjs');
+  const root = mkdtempSync(path.join(ROOT, 'state', 'tmp', 'dashboard-relay-'));
+  writeFileSync(path.join(root, 'versions.lock.json'), JSON.stringify({edition: '0.0.0', fonts: []}));
+  const settings = await createSettingsServer({root, port: 0});
+  const target = Number(new URL(settings.origin).port), listen = 47391;
+  const close = await startRelays({hosts: ['studio.tail1234.ts.net']}, {relays: {settings: {listen, target, https: 8444}}});
+  const get = (port, headers) => new Promise((resolve, reject) => {
+    http.get({host: '127.0.0.1', port, path: `/?token=${settings.token}`, headers}, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); }).on('error', reject);
+  });
+  try {
+    const remote = {host: 'studio.tail1234.ts.net:8444', origin: 'https://studio.tail1234.ts.net:8444'};
+    assert.equal(await get(target, remote), 403, 'the settings screen alone refuses a remote Host');
+    assert.equal(await get(listen, remote), 200, 'through the relay it answers');
+    assert.equal(await get(listen, {host: 'evil.example'}), 421, 'the relay refuses other names');
+  } finally { await close(); await settings.close(); rmSync(root, {recursive: true, force: true}); }
+});

@@ -2,11 +2,20 @@
 // Reel Studio dashboard client: projects, uploads, the chat with Claude, approvals and stage progress.
 const $ = (sel, root = document) => root.querySelector(sel);
 const H = {'x-dashboard': '1', 'content-type': 'application/json'};
-const state = {stages: [], styles: [], projects: new Map(), raw: [], current: null, project: null, drafts: new Map(), tabs: new Map(), details: null};
+const state = {stages: [], styles: [], projects: new Map(), raw: [], current: null, project: null, drafts: new Map(), tabs: new Map(), details: null, remote: null};
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const size = (b) => b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(2) + ' GB' : b >= 1024 ** 2 ? (b / 1024 ** 2).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
 const clock = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0'); };
 const LINK_LABEL = {editor: 'افتح المحرر', settings: 'افتح الإعدادات'};
+// Opened through Tailscale (from a phone, say): local editor/settings links become their https addresses on the same name.
+function publicUrl(url) {
+  if (!state.remote) return url;
+  try {
+    const u = new URL(url);
+    const match = Object.values(state.remote).find((r) => String(r.local) === u.port);
+    return match ? match.url + u.pathname + u.search : url;
+  } catch { return url; }
+}
 
 async function api(path, options = {}) {
   const res = await fetch(path, {...options, headers: {...H, ...(options.headers ?? {})}});
@@ -20,7 +29,7 @@ function format(text) {
   return esc(text)
     .replace(/`([^`\n]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-    .replace(/http:\/\/(?:127\.0\.0\.1|localhost):\d{2,5}\/[^\s"'<>)\]`]*/g, (url) => `<a href="${url}" target="_blank" rel="noopener">${url.includes(':4380') ? 'افتح المحرر' : url.includes(':4381') ? 'افتح الإعدادات' : 'افتح الرابط'} ↗</a>`);
+    .replace(/http:\/\/(?:127\.0\.0\.1|localhost):\d{2,5}\/[^\s"'<>)\]`]*/g, (url) => `<a href="${publicUrl(url)}" target="_blank" rel="noopener">${url.includes(':4380') ? 'افتح المحرر' : url.includes(':4381') ? 'افتح الإعدادات' : 'افتح الرابط'} ↗</a>`);
 }
 
 // ---------- sidebar ----------
@@ -269,7 +278,7 @@ function previewHtml(d) {
 }
 
 function editorHtml() {
-  const url = state.project?.links?.editor;
+  const url = state.project?.links?.editor && publicUrl(state.project.links.editor);
   if (!url) return `<p class="empty">المحرر مش شغال دلوقتي.</p><div class="cta-row" style="justify-content:center"><button class="primary" data-say="افتح المحرر الحي على بورت 4380.">اطلب من Claude يفتح المحرر</button></div>`;
   return `<div class="cta-row" style="margin:0 0 10px"><a class="primary" style="text-decoration:none" href="${esc(url)}" target="_blank" rel="noopener">افتح المحرر في صفحة لوحده ↗</a><span class="dim">لو المحرر ما ظهرش تحت، اتأكد إن البورت 4380 موجود في أمر SSH.</span></div><iframe class="editor" src="${esc(url)}" title="المحرر"></iframe>`;
 }
@@ -419,7 +428,7 @@ function renderHead() {
 }
 function renderLinks() {
   const p = state.project; if (!p || !$('.links')) return;
-  $('.links').innerHTML = Object.entries(p.links ?? {}).map(([kind, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(LINK_LABEL[kind] ?? 'افتح ' + kind)} ↗</a>`).join('');
+  $('.links').innerHTML = Object.entries(p.links ?? {}).map(([kind, url]) => `<a href="${esc(publicUrl(url))}" target="_blank" rel="noopener">${esc(LINK_LABEL[kind] ?? 'افتح ' + kind)} ↗</a>`).join('');
 }
 
 function addApproval(entry) {
@@ -505,7 +514,7 @@ function connect() {
 }
 async function refreshState() {
   const data = await api('/api/state');
-  Object.assign(state, {stages: data.stages, styles: data.styles, raw: data.raw});
+  Object.assign(state, {stages: data.stages, styles: data.styles, raw: data.raw, remote: data.remote});
   $('#disk').innerHTML = data.disk ? `فاضي <span class="size">${size(data.disk.free)}</span> من <span class="size">${size(data.disk.total)}</span><div class="meter"><i style="width:${Math.round((1 - data.disk.free / data.disk.total) * 100)}%"></i></div>` : '';
   $('#logout').hidden = !data.password;
   state.projects = new Map(data.projects.map((p) => [p.id, p]));
@@ -523,7 +532,7 @@ $('#files').addEventListener('click', () => { if (location.hash) location.hash =
 $('#menu').addEventListener('click', () => $('#side').classList.toggle('open'));
 $('#settings').addEventListener('click', async () => {
   const w = window.open('', '_blank');
-  try { const data = await api('/api/settings', {method: 'POST', body: '{}'}); w.opener = null; w.location = data.url; }
+  try { const data = await api('/api/settings', {method: 'POST', body: '{}'}); w.opener = null; w.location = publicUrl(data.url); }
   catch (err) { w.close(); alert(err.message); }
 });
 $('#logout').addEventListener('click', async () => { await api('/api/logout', {method: 'POST', body: '{}'}).catch(() => {}); location.reload(); });

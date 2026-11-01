@@ -11,6 +11,7 @@ import {STAGES, detectStages, recordStages, slugFromText, stageSummary} from './
 import {mediaFile, projectDetails, sendMedia} from './details.mjs';
 import {RENDER_PROGRESS_DIR} from '../render-progress.mjs';
 import {PasswordGate} from './auth.mjs';
+import {allowedHost, publicLinks, readRemote, startRelays} from './remote.mjs';
 
 // The studio dashboard: projects, uploads into Raw/, a chat with Claude Code running in the studio folder,
 // approve/deny buttons for anything outside the allowlist, and stage progress read from the project files.
@@ -19,7 +20,6 @@ import {PasswordGate} from './auth.mjs';
 const UI = fileURLToPath(new URL('../../dashboard-ui/', import.meta.url));
 const STATIC = {'/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/app.css': ['app.css', 'text/css']};
 const COOKIE = 'rs_dashboard';
-const LOOPBACK = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/;
 const LINK = /http:\/\/(?:127\.0\.0\.1|localhost):(\d{2,5})\/[^\s"'<>)\]`]*/g;
 const LINK_KINDS = {4380: 'editor', 4381: 'settings'};
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
@@ -93,7 +93,7 @@ async function ownedFolders(root, slug) {
   return {projects: await near('Projects'), outputs: await near('Outputs')};
 }
 
-export async function createDashboardServer({root, port = 0, claudeCommand, sessionFactory, settingsPort = 4381, startSettings} = {}) {
+export async function createDashboardServer({root, port = 0, claudeCommand, sessionFactory, settingsPort = 4381, startSettings, relays = true} = {}) {
   root = await fs.realpath(root);
   const store = await new DashboardStore(root).open();
   const token = await store.token();
@@ -104,6 +104,10 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
   const styles = Object.entries(STYLE_LABELS).map(([id, v]) => ({id, label: v.label, description: v.description}));
   const makeSession = sessionFactory ?? ((options) => new ClaudeSession({...options, command: claudeCommand}));
   const gate = await new PasswordGate(path.join(root, 'state', 'dashboard')).open();
+  // Remote access over Tailscale (node scripts/dashboard.mjs --tailscale): the saved machine name is accepted as a
+  // Host, and the editor/settings relays start with the dashboard.
+  const remote = await readRemote(path.join(root, 'state', 'dashboard'));
+  const closeRelays = remote && relays ? await startRelays(remote, relays === true ? undefined : {relays}) : null;
   let settings = null;
   let origin;
 
@@ -211,7 +215,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
     if (req.method !== 'GET' && req.headers['x-dashboard'] !== '1') throw new HttpError(403, 'الطلب لازم يجي من اللوحة.');
     if (a === 'state' && req.method === 'GET') {
       const disk = await fs.statfs(root).then((st) => ({free: st.bavail * st.bsize, total: st.blocks * st.bsize})).catch(() => null);
-      return send(res, 200, {ok: true, stages: STAGES, styles, projects: store.list().map(summary), raw: await listRawFiles(root), disk, password: gate.enabled});
+      return send(res, 200, {ok: true, stages: STAGES, styles, projects: store.list().map(summary), raw: await listRawFiles(root), disk, password: gate.enabled, remote: publicLinks(req.headers.host, remote)});
     }
     if (a === 'settings' && req.method === 'POST') {
       if (!settings) {
@@ -323,10 +327,11 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, origin);
-      if (!LOOPBACK.test(req.headers.host ?? '')) throw new HttpError(421, 'العنوان ده مش مسموح.');
+      if (!allowedHost(req.headers.host, remote)) throw new HttpError(421, 'العنوان ده مش مسموح.');
       const given = url.searchParams.get('token');
       if (given && sameToken(given, token) && url.pathname === '/') {
-        res.writeHead(303, {location: '/', 'set-cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`}); return res.end();
+        const secure = publicLinks(req.headers.host, remote) ? '; Secure' : '';
+        res.writeHead(303, {location: '/', 'set-cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000${secure}`}); return res.end();
       }
       if (!sameToken(cookieToken(req.headers.cookie) ?? req.headers['x-dashboard-token'], token)) throw new HttpError(401, 'افتح الرابط الكامل اللي طبعه أمر اللوحة (فيه token).');
       // Optional password: a second lock on top of the link, for a server other people can reach.
@@ -360,6 +365,7 @@ export async function createDashboardServer({root, port = 0, claudeCommand, sess
       clearInterval(poll); clearInterval(heartbeat);
       for (const session of sessions.values()) session.close();
       await settings?.close().catch(() => {});
+      await closeRelays?.();
       for (const res of clients) res.end();
       await store.flush();
       await new Promise((resolve) => { server.closeAllConnections(); server.close(() => resolve()); });
